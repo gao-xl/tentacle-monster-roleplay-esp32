@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import socket
 import subprocess
 import sys
 import time
-from typing import Iterable
+import uuid
+from pathlib import Path
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -19,6 +21,10 @@ DEFAULT_TIMEOUT = 5.0
 MAX_COMMAND_LENGTH = 64
 WINDOWS_DETACHED_PROCESS = 0x00000008
 WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
+ROOT = Path(__file__).resolve().parent
+BACKGROUND_STATE_FILE = ROOT / "advanced-background.json"
+BACKGROUND_STOP_PREFIX = ".advanced-background-"
+STOP_POLL_SECONDS = 0.1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +39,9 @@ def main(argv: list[str] | None = None) -> int:
         command = build_command(args)
     except ValueError as error:
         parser.error(str(error))
+
+    if args.stop:
+        request_active_background_stop()
 
     try:
         raw_reply = send_command(args.host, args.port, args.timeout, command)
@@ -89,9 +98,14 @@ def advanced_main(argv: list[str]) -> int:
 
     deadline = time.monotonic() + args.duration
     sent = 0
+    run_id = args.background_run
 
     try:
         while time.monotonic() < deadline:
+            if run_id and background_stop_requested(run_id):
+                print("background advanced run stopped")
+                return 0
+
             command = action()
             try:
                 raw_reply = send_command(args.host, args.port, args.timeout, command)
@@ -110,10 +124,15 @@ def advanced_main(argv: list[str]) -> int:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            time.sleep(min(args.interval, remaining))
+            if wait_for_interval(min(args.interval, remaining), run_id):
+                print("background advanced run stopped")
+                return 0
     except KeyboardInterrupt:
         print("interrupted")
         return 130
+    finally:
+        if run_id:
+            clear_background_run(run_id)
 
     return 0
 
@@ -133,6 +152,7 @@ def build_advanced_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start the advanced run in a detached background process",
     )
+    parser.add_argument("--background-run", help=argparse.SUPPRESS)
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--hit", type=float, metavar="DAMAGE", help="send repeated HIT <damage>")
@@ -186,8 +206,17 @@ def parse_range(value: str) -> tuple[float, float]:
 
 
 def start_advanced_background(argv: list[str]) -> int:
+    request_active_background_stop()
+    run_id = uuid.uuid4().hex
     child_args = [arg for arg in argv if arg != "--background"]
-    command = [sys.executable, os.path.abspath(__file__), "--advanced", *child_args]
+    command = [
+        sys.executable,
+        os.path.abspath(__file__),
+        "--advanced",
+        *child_args,
+        "--background-run",
+        run_id,
+    ]
     kwargs: dict[str, object] = {
         "cwd": os.path.dirname(os.path.abspath(__file__)),
         "stdin": subprocess.DEVNULL,
@@ -201,8 +230,62 @@ def start_advanced_background(argv: list[str]) -> int:
         kwargs["start_new_session"] = True
 
     process = subprocess.Popen(command, **kwargs)
+    write_background_state(run_id, process.pid)
+    if process.poll() is not None:
+        clear_background_run(run_id)
     print(f"started background advanced run, pid={process.pid}")
     return 0
+
+
+def background_stop_file(run_id: str) -> Path:
+    return ROOT / f"{BACKGROUND_STOP_PREFIX}{run_id}.stop"
+
+
+def read_background_state() -> dict[str, object] | None:
+    try:
+        state = json.loads(BACKGROUND_STATE_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict) or not isinstance(state.get("run_id"), str):
+        return None
+    return state
+
+
+def write_background_state(run_id: str, pid: int) -> None:
+    BACKGROUND_STATE_FILE.write_text(
+        json.dumps({"run_id": run_id, "pid": pid}),
+        encoding="utf-8",
+    )
+
+
+def request_active_background_stop() -> bool:
+    state = read_background_state()
+    if state is None:
+        return False
+    background_stop_file(str(state["run_id"])).touch()
+    return True
+
+
+def background_stop_requested(run_id: str) -> bool:
+    return background_stop_file(run_id).exists()
+
+
+def clear_background_run(run_id: str) -> None:
+    background_stop_file(run_id).unlink(missing_ok=True)
+    state = read_background_state()
+    if state is not None and state.get("run_id") == run_id:
+        BACKGROUND_STATE_FILE.unlink(missing_ok=True)
+
+
+def wait_for_interval(seconds: float, run_id: str | None) -> bool:
+    deadline = time.monotonic() + seconds
+    while True:
+        if run_id and background_stop_requested(run_id):
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(STOP_POLL_SECONDS, remaining))
 
 
 def build_command(args: argparse.Namespace) -> str:

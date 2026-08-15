@@ -158,12 +158,11 @@ ESP32-S3 固件会把 damage 换算成强度增量再叠加到当前强度。
 
   py .\vibration-control.py --advanced --randomset 5-20 --time 300 --interval 2 --background
 
-后台命令会按照 --time 自动结束。普通的 --stop 可以立刻让设备停止当前输出：
+后台命令会按照 --time 自动结束。普通的 --stop 会终止当前后台高级循环，并立刻让设备停止输出：
 
   py .\vibration-control.py --stop
 
-但如果后台高级命令还没跑完，它后续到达 interval 时还会继续发送下一次命令。
-所以后台命令建议把 --time 写成明确的剧情片段长度，例如 30、60、120、180 秒。
+所以后台命令仍建议把 --time 写成明确的剧情片段长度，例如 30、60、120、180 秒。
 
 
 实时场景调用范式
