@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  openhaptic-amd:
+    build:
+      context: .
+      dockerfile: Dockerfile.amd
+    container_name: openhaptic-amd
+    restart: unless-stopped
+    
+    # === AMD Radeon iGPU (780M/680M) 硬件设备直通 ===
+    devices:
+      - "/dev/dri:/dev/dri"          # 显卡渲染/计算节点
+      - "/dev/kfd:/dev/kfd"          # AMD ROCm / 计算接口 (如果宿主为 Linux)
+      # - "/dev/ttyACM0:/dev/ttyACM0"  # ESP32-C3 SuperMini 串口直通 (Linux 选配)
+    
+    group_add:
+      - "video"
+      - "render"
+      - "dialout"                    # 串口访问权限
+    
+    # === 端口映射或主机网络 ===
+    network_mode: "host"             # host 模式直接复用宿主网络，手机扫码最方便
+    
+    volumes:
+      - ./models:/app/models         # 模型文件共享挂载
+      - ./config:/app/config
+      - ./src/ui/static/audio:/app/src/ui/static/audio

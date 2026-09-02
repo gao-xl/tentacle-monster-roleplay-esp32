@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenHaptic-Roleplay | Cyberpunk HUD Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080a10;
+            --panel-bg: rgba(14, 20, 32, 0.85);
+            --neon-blue: #00f0ff;
+            --neon-pink: #ff0055;
+            --neon-purple: #b000ff;
+            --neon-green: #00ff88;
+            --neon-yellow: #ffcc00;
+            --text-main: #e0f4ff;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Rajdhani', sans-serif;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.12), transparent 45%),
+                linear-gradient(rgba(8, 10, 16, 0.95), rgba(8, 10, 16, 0.95)),
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 240, 255, 0.03) 2px, rgba(0, 240, 255, 0.03) 4px);
+            min-height: 100vh;
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 28px;
+            background: rgba(10, 15, 26, 0.9);
+            border-bottom: 2px solid var(--neon-blue);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+        }
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--neon-blue);
+            text-shadow: 0 0 10px var(--neon-blue);
+            letter-spacing: 2px;
+        }
+        .status-badge {
+            padding: 4px 14px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(0, 255, 136, 0.15);
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+        }
+
+        /* Main Grid Layout */
+        .container {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 240, 255, 0.25);
+            border-radius: 8px;
+            padding: 18px;
+            position: relative;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 15px;
+            color: var(--neon-blue);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            letter-spacing: 1px;
+        }
+
+        /* Video Container */
+        .video-box {
+            position: relative;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(0, 240, 255, 0.4);
+            background: #000;
+        }
+        .video-box img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .video-overlay-tag {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid var(--neon-pink);
+            color: var(--neon-pink);
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+
+        /* Telemetry & Gauges */
+        .gauge-group {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .gauge-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .gauge-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #a0c0d8;
+        }
+        .gauge-bar-bg {
+            height: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gauge-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.2s ease, background-color 0.2s ease;
+        }
+
+        /* Sensor Badges */
+        .badges-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .badge-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .badge-card .label { font-size: 12px; color: #809bb0; }
+        .badge-card .val { font-size: 18px; font-weight: bold; margin-top: 4px; font-family: 'Orbitron'; }
+
+        /* AI Dialogue Box */
+        .dialogue-history {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding-right: 6px;
+        }
+        .dialogue-msg {
+            background: rgba(176, 0, 255, 0.12);
+            border-left: 3px solid var(--neon-purple);
+            padding: 10px 14px;
+            border-radius: 0 6px 6px 0;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .dialogue-time { font-size: 11px; color: #b080ff; margin-bottom: 2px; }
+
+        /* Control Buttons */
+        .btn-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .cyber-btn {
+            background: rgba(0, 240, 255, 0.12);
+            border: 1px solid var(--neon-blue);
+            color: var(--neon-blue);
+            font-family: 'Orbitron', sans-serif;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s ease;
+        }
+        .cyber-btn:hover {
+            background: var(--neon-blue);
+            color: #000;
+            box-shadow: 0 0 15px var(--neon-blue);
+        }
+        .btn-stop {
+            background: rgba(255, 0, 85, 0.2);
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+            grid-column: span 3;
+            font-size: 16px;
+            padding: 12px;
+        }
+        .btn-stop:hover {
+            background: var(--neon-pink);
+            color: #fff;
+            box-shadow: 0 0 20px var(--neon-pink);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">⚡ OPENHAPTIC // ROLEPLAY CORE</div>
+        <div class="status-badge" id="connStatus">SYSTEM READY</div>
+    </header>
+
+    <div class="container">
+        <!-- Left Column: Video & Telemetry -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="panel">
+                <div class="panel-title">👁️ REAL-TIME YOLO VISION FEED</div>
+                <div class="video-box">
+                    <img src="/video_feed" alt="Camera Stream" />
+                    <div class="video-overlay-tag">YOLOv8-POSE ACTIVE</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">📡 SENSOR FUSION & BIOMETRIC TELEMETRY</div>
+                <div class="gauge-group">
+                    <div class="gauge-item">
+                        <div class="gauge-header">
+                            <span>挣扎抵抗指数 (Struggle Index)</span>
+                            <span id="txtStruggle">0%</span>
+                        </div>
+                        <div class="gauge-bar-bg">
+                            <div class="gauge-fill" id="fillStruggle" style="background: var(--neon-yellow);"></div>
+                        </div>
+                    </div>
+
+                    <div class="gauge-item">
+                        <div class="gauge-header">
+                            <span>高频抽搐痉挛度 (Involuntary Tremor)</span>
+                            <span id="txtTremor">0%</span>
+                        </div>
+                        <div class="gauge-bar-bg">
+                            <div class="gauge-fill" id="fillTremor" style="background: var(--neon-pink);"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="badges-grid">
+                    <div class="badge-card">
+                        <div class="label">当前姿态</div>
+                        <div class="val" id="valPosture" style="color: var(--neon-green);">Neutral</div>
+                    </div>
+                    <div class="badge-card">
+                        <div class="label">核心弱点防护</div>
+                        <div class="val" id="valCoreShield" style="color: #666;">OPEN</div>
+                    </div>
+                    <div class="badge-card">
+                        <div class="label">陀螺仪倾角 (Roll / Pitch)</div>
+                        <div class="val" id="valGyro">0° / 0°</div>
+                    </div>
+                    <div class="badge-card">
+                        <div class="label">身体状态</div>
+                        <div class="val" id="valBalance" style="color: var(--neon-green);">STANDING</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: AI Narrator & Device Control -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="panel">
+                <div class="panel-title">🧠 AI 触手怪兽剧情中枢 (LLM DIALOGUE)</div>
+                <div class="dialogue-history" id="dialogueList">
+                    <div class="dialogue-msg">
+                        <div class="dialogue-time">SYSTEM</div>
+                        触手在废弃小屋的阴影中慢慢蠕动……AI 视觉监控中枢已就绪。
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">⚡ 硬件通道实时输出 (HARDWARE OUTPUT)</div>
+                <div class="gauge-group">
+                    <div class="gauge-item">
+                        <div class="gauge-header">
+                            <span>通道 0 / 通道 A (震动/电击)</span>
+                            <span id="txtCh0">0%</span>
+                        </div>
+                        <div class="gauge-bar-bg">
+                            <div class="gauge-fill" id="fillCh0" style="background: var(--neon-blue);"></div>
+                        </div>
+                    </div>
+                    <div class="gauge-item">
+                        <div class="gauge-header">
+                            <span>通道 1 / 通道 B</span>
+                            <span id="txtCh1">0%</span>
+                        </div>
+                        <div class="gauge-bar-bg">
+                            <div class="gauge-fill" id="fillCh1" style="background: var(--neon-purple);"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="badges-grid" style="margin-top: 15px;">
+                    <div class="badge-card">
+                        <div class="label">设备型号</div>
+                        <div class="val" id="valDeviceName">ESP32 / Yokonex</div>
+                    </div>
+                    <div class="badge-card">
+                        <div class="label">贴片接触 (Skin Contact)</div>
+                        <div class="val" id="valSkinContact" style="color: var(--neon-green);">OK</div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="cyber-btn" onclick="sendCmd('hit', 60)">💥 试探打击</button>
+                    <button class="cyber-btn" onclick="sendCmd('wave', 40)">🌊 波动缠绕</button>
+                    <button class="cyber-btn" onclick="sendCmd('set', 30)">⚡ 恒定放电</button>
+                    <button class="cyber-btn btn-stop" onclick="sendCmd('stop', 0)">🛑 紧急全局急停 (SPACE)</button>
+                </div>
+            </div>
+
+            <div class="panel" style="text-align: center;">
+                <div class="panel-title" style="justify-content: center;">📱 手机端摄像头推流</div>
+                <p style="font-size: 13px; color: #809bb0; margin-bottom: 10px;">用 iPhone Safari 打开以下链接，可将手机作为无线摄像头与陀螺仪传感器：</p>
+                <a href="/phone" target="_blank" style="color: var(--neon-blue); font-weight: bold; text-decoration: none; font-size: 15px; border: 1px solid var(--neon-blue); padding: 6px 14px; border-radius: 4px; display: inline-block;">👉 打开手机端推流页面 (/phone)</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Audio for AI Voice -->
+    <audio id="ttsAudio" autoplay></audio>
+
+    <script>
+        const wsUrl = `ws://${location.host}/ws`;
+        let ws;
+
+        function connectWS() {
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => {
+                document.getElementById("connStatus").innerText = "LIVE STREAM CONNECTED";
+                document.getElementById("connStatus").style.borderColor = "var(--neon-green)";
+            };
+            ws.onclose = () => {
+                document.getElementById("connStatus").innerText = "DISCONNECTED - RETRYING";
+                document.getElementById("connStatus").style.borderColor = "var(--neon-pink)";
+                setTimeout(connectWS, 2000);
+            };
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === "telemetry") {
+                    updateHUD(data);
+                }
+            };
+        }
+
+        function updateHUD(data) {
+            const p = data.player;
+            const d = data.device;
+
+            if (p) {
+                document.getElementById("txtStruggle").innerText = Math.round(p.struggle) + "%";
+                document.getElementById("fillStruggle").style.width = p.struggle + "%";
+
+                document.getElementById("txtTremor").innerText = Math.round(p.tremor) + "%";
+                document.getElementById("fillTremor").style.width = p.tremor + "%";
+
+                document.getElementById("valPosture").innerText = p.posture;
+                document.getElementById("valCoreShield").innerText = p.hands_core ? "DEFENDING (!)" : "OPEN";
+                document.getElementById("valCoreShield").style.color = p.hands_core ? "var(--neon-pink)" : "#666";
+
+                document.getElementById("valGyro").innerText = Math.round(p.imu_roll) + "° / " + Math.round(p.imu_pitch) + "°";
+                document.getElementById("valBalance").innerText = p.is_collapsed ? "FALLEN / COLLAPSED" : "STANDING";
+                document.getElementById("valBalance").style.color = p.is_collapsed ? "var(--neon-pink)" : "var(--neon-green)";
+            }
+
+            if (d) {
+                document.getElementById("valDeviceName").innerText = d.name;
+                const p0 = d.powers[0] || 0;
+                const p1 = d.powers[1] || 0;
+                document.getElementById("txtCh0").innerText = Math.round(p0) + "%";
+                document.getElementById("fillCh0").style.width = p0 + "%";
+                document.getElementById("txtCh1").innerText = Math.round(p1) + "%";
+                document.getElementById("fillCh1").style.width = p1 + "%";
+
+                document.getElementById("valSkinContact").innerText = d.skin_contact ? "OK" : "DETACHED (!)";
+                document.getElementById("valSkinContact").style.color = d.skin_contact ? "var(--neon-green)" : "var(--neon-pink)";
+            }
+
+            if (data.dialogues && data.dialogues.length > 0) {
+                const list = document.getElementById("dialogueList");
+                list.innerHTML = "";
+                data.dialogues.forEach(m => {
+                    const item = document.createElement("div");
+                    item.className = "dialogue-msg";
+                    item.innerHTML = `<div class="dialogue-time">${m.time}</div>${m.text}`;
+                    list.appendChild(item);
+                });
+                list.scrollTop = list.scrollHeight;
+            }
+        }
+
+        function sendCmd(action, power) {
+            fetch('/api/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action, channel: 0, power: power, decay_ms: 400 })
+            });
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                sendCmd('stop', 0);
+            }
+        });
+
+        connectWS();
+    </script>
+</body>
+</html>

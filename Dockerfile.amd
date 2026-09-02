@@ -1,0 +1,23 @@
+# Dockerfile for AMD Radeon iGPU / Linux & Windows WSL2
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# 1. Install System Drivers for AMD GPU (OpenCL, Mesa, Video)
+RUN apt-get update && apt-get install -y --no-install-recommends     python3 python3-pip python3-dev     mesa-va-drivers mesa-vulkan-drivers mesa-opencl-icd     clinfo v4l-utils libgl1-mesa-glx libglib2.0-0     curl git wget     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 2. Install Python Dependencies
+COPY requirements-amd.txt .
+RUN pip3 install --no-cache-dir -r requirements-amd.txt
+
+# 3. Copy Application Code & Models
+COPY . .
+
+# 4. Expose Web Dashboard Port
+EXPOSE 8000
+
+# 5. Launch
+CMD ["python3", "main.py", "--driver", "esp32", "--camera", "phone", "--web-port", "8000"]

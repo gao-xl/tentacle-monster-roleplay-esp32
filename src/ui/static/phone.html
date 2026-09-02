@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Camera & IMU Stream</title>
+    <style>
+        body {
+            background: #000;
+            color: #00f0ff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #videoElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+        .hud-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.8) 100%);
+        }
+        .hud-header {
+            background: rgba(0,0,0,0.6);
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid #00f0ff;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .controls {
+            z-index: 3;
+            pointer-events: auto;
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: #00f0ff;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 0 15px rgba(0,240,255,0.6);
+        }
+    </style>
+</head>
+<body>
+
+    <video id="videoElement" autoplay playsinline muted></video>
+
+    <div class="hud-overlay">
+        <div class="hud-header">
+            <span>📡 STREAMING: <span id="fpsTag">0 FPS</span></span>
+            <span>GYRO: <span id="gyroTag">0° / 0°</span></span>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" id="btnToggle" onclick="toggleStream()">▶ 开始推流</button>
+            <button class="btn" style="background: #ff0055; color: #fff;" onclick="toggleCamera()">🔄 切换镜头</button>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        let isStreaming = false;
+        let video = document.getElementById("videoElement");
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let facingMode = "environment"; // "user" or "environment"
+        let gyroData = { alpha: 0, beta: 0, gamma: 0, acc_x: 0, acc_y: 0, acc_z: 0 };
+        let streamInterval = null;
+        let framesSent = 0;
+
+        // Listen for iPhone DeviceOrientation (Gyroscope)
+        if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', (e) => {
+                gyroData.alpha = Math.round(e.alpha || 0);
+                gyroData.beta = Math.round(e.beta || 0);
+                gyroData.gamma = Math.round(e.gamma || 0);
+                document.getElementById("gyroTag").innerText = `${gyroData.gamma}° / ${gyroData.beta}°`;
+            });
+        }
+
+        // Listen for iPhone DeviceMotion (Accelerometer)
+        if (window.DeviceMotionEvent) {
+            window.addEventListener('devicemotion', (e) => {
+                if (e.accelerationIncludingGravity) {
+                    gyroData.acc_x = (e.accelerationIncludingGravity.x || 0).toFixed(2);
+                    gyroData.acc_y = (e.accelerationIncludingGravity.y || 0).toFixed(2);
+                    gyroData.acc_z = (e.accelerationIncludingGravity.z || 0).toFixed(2);
+                }
+            });
+        }
+
+        async function initCamera() {
+            try {
+                if (video.srcObject) {
+                    video.srcObject.getTracks().forEach(t => t.stop());
+                }
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                alert("无法打开摄像头: " + err);
+            }
+        }
+
+        function toggleCamera() {
+            facingMode = (facingMode === "user") ? "environment" : "user";
+            initCamera();
+        }
+
+        function toggleStream() {
+            // Request DeviceOrientation permission on iOS 13+
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().catch(console.error);
+            }
+
+            isStreaming = !isStreaming;
+            const btn = document.getElementById("btnToggle");
+
+            if (isStreaming) {
+                btn.innerText = "⏹ 停止推流";
+                btn.style.background = "#ffcc00";
+                canvas.width = 640;
+                canvas.height = 480;
+                
+                streamInterval = setInterval(sendFrame, 50); // ~20 FPS
+            } else {
+                btn.innerText = "▶ 开始推流";
+                btn.style.background = "#00f0ff";
+                clearInterval(streamInterval);
+            }
+        }
+
+        async function sendFrame() {
+            if (!video.videoWidth) return;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const jpegData = canvas.toDataURL('image/jpeg', 0.65);
+
+            try {
+                await fetch('/api/phone_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image: jpegData,
+                        imu: gyroData
+                    })
+                });
+                framesSent++;
+                document.getElementById("fpsTag").innerText = "ACTIVE";
+            } catch (e) {
+                document.getElementById("fpsTag").innerText = "ERR";
+            }
+        }
+
+        initCamera();
+    </script>
+</body>
+</html>
