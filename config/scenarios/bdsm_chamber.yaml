@@ -1,0 +1,54 @@
+name: "暗黑拘束调教室 (BDSM Sensory Chamber)"
+description: "高沉浸 D/s 支配调教场景：严苛姿态规训、计数受罚、绝对高潮禁断与事后温柔抚慰。"
+start_node: "ACT1_BONDAGE"
+
+nodes:
+  - id: "ACT1_BONDAGE"
+    title: "第一幕：束缚接入与姿态规训"
+    lore: "你跪在调教室的正中央，双路神经贴片已牢牢固定。主人冰冷的声音在房间中回荡。"
+    entry_voice: "规训程序启动。双膝跪好，双手背到身后，没有主人的允许不准动一下。"
+    advance_overload: 30.0
+    next_node: "ACT2_DISCIPLINE"
+    rules:
+      - id: "hands_break_rule"
+        trigger: "core_covered"
+        threshold: 1.0
+        action: "preemption_voice"
+        payload: { text: "把手给我背过去！擅自防守，加罚一次！" }
+        cooldown: 3.0
+
+  - id: "ACT2_DISCIPLINE"
+    title: "第二幕：计数抽击与破防惩戒"
+    lore: "随着姿态变形，严厉的电击抽击瞬间降临，计数声不断攀升。"
+    entry_voice: "第三次惩戒。还在强撑吗？把身体完全展现出来。"
+    advance_overload: 70.0
+    next_node: "ACT3_DENIAL"
+    rules:
+      - id: "toe_curl_punish"
+        trigger: "toe_curl_above"
+        threshold: 40.0
+        action: "shock_burst"
+        payload: { power: 65.0, channel: 0 }
+        cooldown: 2.5
+
+  - id: "ACT3_DENIAL"
+    title: "第三幕：深度边缘禁断 (Edge Denial)"
+    lore: "快感直逼临界点，却在最高峰被瞬间掐灭断电，强迫憋回受训。"
+    entry_voice: "想去？主人可没允许你高潮。给我乖乖憋回去受着。"
+    advance_overload: 100.0
+    next_node: "ACT4_AFTERCARE"
+    rules:
+      - id: "denial_wave"
+        trigger: "struggle_above"
+        threshold: 35.0
+        action: "flow_wave"
+        payload: {}
+        cooldown: 4.0
+
+  - id: "ACT4_AFTERCARE"
+    title: "终幕：事后温柔抚慰 (Aftercare)"
+    lore: "规训圆满完成，电流转为极其细腻的低频轻抚，身心得到彻底的抚慰与释放。"
+    entry_voice: "今天表现得很乖……现在放松身体，主人会好好抚慰你的。"
+    advance_overload: 100.0
+    next_node: "ACT4_AFTERCARE"
+    rules: []
