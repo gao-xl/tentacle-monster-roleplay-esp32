@@ -13,6 +13,14 @@
         <span class="badge" :class="isConnected ? 'badge-online' : 'badge-offline'">
           {{ isConnected ? 'BACKEND CONNECTED' : 'DISCONNECTED' }}
         </span>
+        <div class="character-pill">
+          <span class="chara-icon">🎭</span>
+          <select v-model="selectedCharacter" class="chara-select">
+            <option value="lilith">莉莉丝 (魅魔审判官)</option>
+            <option value="valkyrie">艾莉西亚 (冷面女武神)</option>
+            <option value="queen">深渊魔皇 (触手主宰)</option>
+          </select>
+        </div>
         <button class="btn-studio" @click="isStudioOpen = true">🧩 剧本工坊</button>
         <button class="btn-calib" @click="isToleranceOpen = true">⚡ 生理耐受校准</button>
         <button class="btn-settings" @click="isSettingsOpen = true">⚙️ 全局设置</button>
@@ -124,6 +132,7 @@ const isToleranceOpen = ref(false)
 const isStudioOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
+const selectedCharacter = ref('lilith')
 const activeProfile = ref<{ display_name?: string; user_gender?: string }>({
   display_name: 'Alice',
   user_gender: 'FEMALE'
@@ -265,6 +274,31 @@ onUnmounted(() => {
   color: #ffcc00;
 }
 .badge-offline { border: 1px solid #ff0055; color: #ff0055; }
+
+.character-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(176, 0, 255, 0.15);
+  border: 1px solid #b000ff;
+  border-radius: 20px;
+  padding: 4px 12px;
+  box-shadow: 0 0 10px rgba(176, 0, 255, 0.3);
+}
+.chara-icon { font-size: 14px; }
+.chara-select {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  outline: none;
+}
+.chara-select option {
+  background: #080b12;
+  color: #e0f4ff;
+}
 
 .btn-studio {
   background: rgba(0, 255, 136, 0.15);
