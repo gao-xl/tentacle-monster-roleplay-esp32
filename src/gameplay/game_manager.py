@@ -21,6 +21,7 @@ from .guided_conditioning import GuidedConditioningMode
 from .neural_parkour import NeuralParkourMode
 from .cleaning_discipline import CleaningDisciplineMode
 from .llm_story_director import LLMStoryDirectorMode
+from .multi_tier_edging_protocol import MultiTierEdgingProtocolMode
 
 from ..vision.pose26_tracker import Pose26AnalysisResult
 from ..core.quad_channel_sequencer import QuadChannelSequencer
@@ -82,6 +83,8 @@ class CentralGameManager:
             self.active_mode = RestrainedTrialMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
         elif mode_key == "souls":
             self.active_mode = SoulsBossBattleMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
+        elif mode_key == "edging_protocol":
+            self.active_mode = MultiTierEdgingProtocolMode(self.sequencer, self.profile, self.voice_engine, on_event_broadcast=self.on_broadcast)
         elif mode_key == "llm_story":
             self.active_mode = LLMStoryDirectorMode(self.sequencer, self.profile, self.voice_engine, on_event_broadcast=self.on_broadcast)
         elif mode_key == "cleaning":
