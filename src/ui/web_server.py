@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .webrtc_manager import WebRTCManager
+from ..core.config_manager import global_config_mgr
 
 logger = logging.getLogger("WebServer")
 
@@ -80,6 +81,16 @@ def create_app(
         if on_command:
             on_command(cmd.dict())
         return {"status": "ok"}
+
+    # 3.1 Global Settings API
+    @app.get("/api/settings")
+    async def get_settings():
+        return global_config_mgr.get_dict()
+
+    @app.post("/api/settings")
+    async def update_settings(payload: dict):
+        success = global_config_mgr.save(payload)
+        return {"status": "ok" if success else "error"}
 
     # 4. Mode Switch API
     @app.post("/api/switch_mode")

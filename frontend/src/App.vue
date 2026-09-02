@@ -10,6 +10,7 @@
         <span class="badge" :class="isConnected ? 'badge-online' : 'badge-offline'">
           {{ isConnected ? 'BACKEND CONNECTED' : 'DISCONNECTED' }}
         </span>
+        <button class="btn-settings" @click="isSettingsOpen = true">⚙️ 全局设置</button>
         <button class="btn-emergency" @click="sendEmergencyStop">🛑 EMERGENCY STOP (SPACE)</button>
       </div>
     </header>
@@ -97,14 +98,19 @@
         </div>
       </section>
     </main>
+
+    <!-- Global Settings Modal -->
+    <SettingsModal :isOpen="isSettingsOpen" @close="isSettingsOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import SettingsModal from './components/SettingsModal.vue'
 
 const isConnected = ref(false)
 const isGlitching = ref(false)
+const isSettingsOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
 const dialogues = ref<{ time: string; text: string }[]>([
@@ -226,6 +232,22 @@ onUnmounted(() => {
 }
 .badge-online { border: 1px solid #00ff88; color: #00ff88; }
 .badge-offline { border: 1px solid #ff0055; color: #ff0055; }
+
+.btn-settings {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid #00f0ff;
+  color: #00f0ff;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-settings:hover {
+  background: #00f0ff;
+  color: #000;
+  box-shadow: 0 0 15px #00f0ff;
+}
 
 .btn-emergency {
   background: rgba(255, 0, 85, 0.2);
