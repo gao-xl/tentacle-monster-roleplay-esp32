@@ -1,7 +1,7 @@
 """
 AI Narrative Engine (Slow Loop) for OpenHaptic-Roleplay
-Aggregates multimodal telemetry (YOLO Pose, Gyro IMU, Device Output)
-and calls LLMs (DeepSeek / OpenAI / Ollama / Claude) to generate in-character narrative & tactics.
+Deeply integrates Multimodal Biometrics (YOLO Pose 26, Gyro, Quad-Pads, Gender)
+with Story Campaign Acts to generate in-character voice dialogues via Kokoro TTS.
 """
 
 import os
@@ -13,6 +13,9 @@ from typing import Optional, Callable, Dict, Any
 import requests
 
 from .sensor_fusion import FusedPlayerState
+from .gender_tuning import GenderTuningProfile, UserGender
+from .electrode_topology import ElectrodeTopologyManager
+from ..gameplay.story_director import ScenarioCampaignEngine, StoryNode
 from ..drivers.base import DeviceTelemetry
 
 logger = logging.getLogger("SlowLoopEngine")
@@ -24,14 +27,16 @@ class SlowLoopEngine:
         api_key: Optional[str] = None,
         base_url: str = "https://api.deepseek.com/v1",
         model: str = "deepseek-chat",
-        system_prompt: Optional[str] = None,
+        profile: Optional[GenderTuningProfile] = None,
+        campaign: Optional[ScenarioCampaignEngine] = None,
         interval_sec: float = 6.0
     ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.profile = profile or GenderTuningProfile(gender=UserGender.NEUTRAL)
+        self.campaign = campaign
         self.interval_sec = interval_sec
-        self.system_prompt = system_prompt or "你是一个调皮的触手小怪物NPC，观察玩家的姿态与反应并进行生动角色扮演。"
         
         self._last_call_time = 0.0
         self._is_generating = False
@@ -42,7 +47,6 @@ class SlowLoopEngine:
         player_state: FusedPlayerState,
         device_telemetry: Optional[DeviceTelemetry] = None
     ) -> None:
-        """Called regularly by the main loop. Triggers async LLM call if cooldown has elapsed."""
         now = time.time()
         if now - self._last_call_time < self.interval_sec or self._is_generating:
             return
@@ -50,84 +54,81 @@ class SlowLoopEngine:
         self._last_call_time = now
         self._is_generating = True
 
-        # Build context prompt
+        # Build Rich Narrative Prompt combining Story Lore + Biometrics + Gender
         context = self._build_context_prompt(player_state, device_telemetry)
-        
-        # Fire asynchronous LLM generation
         threading.Thread(target=self._call_llm_async, args=(context,), daemon=True).start()
 
     def _build_context_prompt(self, p: FusedPlayerState, t: Optional[DeviceTelemetry]) -> str:
-        lines = ["[当前现场传感器读数与战况]"]
-        lines.append(f"- 玩家姿态: {p.posture_label}")
-        lines.append(f"- 手部防御: 核心弱点区={'已遮挡' if p.hands_covering_core else '暴露'}, 胸部={'已遮挡' if p.hands_covering_chest else '暴露'}")
-        lines.append(f"- 挣扎与抗拒指数: {p.struggle_score:.0f}/100")
-        lines.append(f"- 生理抽搐/痉挛指数: {p.tremor_intensity:.0f}/100")
-        lines.append(f"- 身体平衡: {'【已倒地/翻滚】' if p.is_collapsed else '保持姿态'}")
+        lines = []
+        
+        # 1. Story Campaign Lore Context
+        if self.campaign:
+            lines.append(self.campaign.get_llm_story_context())
+            lines.append("------------------------------------------")
+
+        # 2. Gender & Persona Injections
+        lines.append(self.profile.narrative_persona_prompt)
+        lines.append("------------------------------------------")
+
+        # 3. Live Biometric Sensor Telemetry
+        lines.append("[当前现场真实传感器与姿态读数]:")
+        lines.append(f"- 身体姿态状态: {p.posture_label}")
+        lines.append(f"- 核心防御: 魔法传导器(Point 19)={'【双手死死捂住】' if p.hands_covering_core else '暴露打开'}, 胸口={'【捂住防护】' if p.hands_covering_chest else '无防护'}")
+        lines.append(f"- 足底生理痉挛指数: {p.toe_curl_spasm:.0f}% (脚趾蜷缩/脚尖紧绷程度)")
+        lines.append(f"- 身体剧烈挣扎指数: {p.struggle_score:.0f}/100")
+        lines.append(f"- 身体平衡: {'【已失去平衡彻底倒地/跪倒】' if p.is_collapsed else '仍在勉强支撑姿态'}")
 
         if t and t.is_connected:
-            powers_str = ", ".join([f"CH{k}:{v:.0f}%" for k, v in t.channel_powers.items()])
-            lines.append(f"- 硬件反馈输出: {powers_str}")
-            if t.battery_level is not None:
-                lines.append(f"- 设备电量: {t.battery_level}%")
+            powers_str = ", ".join([f"回路{k}:{v:.0f}%" for k, v in t.channel_powers.items()])
+            lines.append(f"- 4贴片双路硬件输出: {powers_str}")
             if not t.skin_contact:
-                lines.append("- ⚠️ 警报: 玩家贴片脱落/接触不良！可能在试图摆脱控制！")
+                lines.append("- ⚠️ 警报: 玩家电极贴片脱落！试图逃脱束缚！")
 
         lines.append("
-请根据以上现场真实状态，以触手怪物的语气给出 2~3 句生动的剧情台词与动作描述。")
+请根据当前剧情幕数与上述现场真实反应，以调皮戏谑的小触手语气说出 2~3 句生动的剧情台词。")
         return "
 ".join(lines)
 
     def _call_llm_async(self, user_content: str):
         try:
             if not self.api_key:
-                # Built-in Mock Generation if no API key provided
-                narrative = self._generate_rule_fallback(user_content)
+                narrative = self._generate_campaign_fallback(user_content)
             else:
                 resp = requests.post(
                     f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                     json={
                         "model": self.model,
                         "messages": [
-                            {"role": "system", "content": self.system_prompt},
+                            {"role": "system", "content": "你是一个沉浸式RPG剧情主持人和调皮爱捉弄人的触手小怪物NPC。"},
                             {"role": "user", "content": user_content}
                         ],
-                        "temperature": 0.8,
-                        "max_tokens": 200
+                        "temperature": 0.85,
+                        "max_tokens": 180
                     },
-                    timeout=10.0
+                    timeout=8.0
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     narrative = data["choices"][0]["message"]["content"].strip()
                 else:
-                    logger.warning(f"LLM API returned error {resp.status_code}: {resp.text}")
-                    narrative = self._generate_rule_fallback(user_content)
+                    narrative = self._generate_campaign_fallback(user_content)
 
-            logger.info(f"[AI Narrator] {narrative}")
+            logger.info(f"[AI Lore Dialogue] {narrative}")
             if self.on_narrative_generated:
                 self.on_narrative_generated(narrative)
 
         except Exception as e:
             logger.error(f"Error calling LLM: {e}")
-            narrative = self._generate_rule_fallback(user_content)
+            narrative = self._generate_campaign_fallback(user_content)
             if self.on_narrative_generated:
                 self.on_narrative_generated(narrative)
         finally:
             self._is_generating = False
 
-    def _generate_rule_fallback(self, content: str) -> str:
-        """Fallback dynamic dialog generator when offline or no API key."""
-        if "已遮挡" in content and "核心弱点区=已遮挡" in content:
-            return "“嘻嘻~ 这么急着护住魔法传导器？触手的吸盘可是最喜欢这种紧绷的战衣张力了呢！”"
-        elif "【已倒地/翻滚】" in content:
-            return "“哎呀，站不稳倒在地上了吗？那触手们可要趁机把你完全缠紧啰~”"
-        elif "挣扎与抗拒指数: 7" in content or "挣扎与抗拒指数: 8" in content:
-            return "“挣扎得这么剧烈，魔力负荷只会上升得更快哦！乖乖接受触手们的魔法检查吧！”"
-        elif "警报: 玩家贴片脱落" in content:
-            return "“咦？想偷偷把魔法电极摘掉逃跑？小触手可不会允许作弊的行为呢，加倍惩罚！”"
-        else:
-            return "“触手在小屋的阴影中慢慢蠕动……正在试探着战败冒险家的防御薄弱点。”"
+    def _generate_campaign_fallback(self, content: str) -> str:
+        """Campaign-aware fallback dialogue generator."""
+        if self.campaign:
+            node = self.campaign.get_current_node()
+            return node.monster_voice_line
+        return "“触手在废弃小屋的阴影中慢慢收拢……战败冒险家的防御正在瓦解。”"
