@@ -1,11 +1,11 @@
 """
-OpenHaptic-Roleplay Master Unified Runner
+OpenHaptic-Roleplay Master Unified Runner (YOLO-Pose 26 Native)
 Integrates:
+- YOLO-Pose 26 Dense Keypoint Vision Engine (Halpe-26 Topology)
 - Hardware HAL (ESP32-C3 SuperMini, Yokonex, DG-LAB)
-- YOLO-Pose Vision Engine
-- Gyroscope / IMU Sensor Fusion
+- Gyroscope / IMU & Foot Spasm Sensor Fusion
 - Fast-Loop Physical Feedback (<30ms)
-- Slow-Loop LLM AI Narrative Engine + Voice TTS
+- Slow-Loop LLM AI Narrative Engine + Kokoro Neural TTS
 - FastAPI Cyberpunk Web Dashboard & Phone Wireless Streamer
 """
 
@@ -24,11 +24,11 @@ from src.drivers.base import BaseDeviceDriver
 from src.drivers.esp32_driver import ESP32Driver
 from src.drivers.yokonex_driver import YokonexDriver
 from src.drivers.dglab_driver import DGLabDriver
-from src.vision.yolo_tracker import YOLOPoseTracker
+from src.vision.pose26_tracker import YOLOPose26Tracker
 from src.core.sensor_fusion import SensorFusionEngine
 from src.core.fast_loop import FastLoopEngine
 from src.core.slow_loop import SlowLoopEngine
-from src.core.tts_engine import TTSEngine
+from src.core.kokoro_engine import KokoroVoiceEngine
 from src.ui.web_server import app, shared_state, broadcast_ai_dialogue
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -36,17 +36,18 @@ logger = logging.getLogger("OpenHaptic-Master")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="OpenHaptic-Roleplay Unified AI Haptic Framework")
+    parser = argparse.ArgumentParser(description="OpenHaptic-Roleplay YOLO-Pose 26 AI Framework")
     parser.add_argument("--driver", choices=["esp32", "yokonex", "dglab", "virtual"], default="esp32", help="Target hardware driver")
     parser.add_argument("--port", default=None, help="ESP32 Serial COM port")
-    parser.add_argument("--camera", default="0", help="Camera source (0 for USB webcam, or 'phone' for iPhone wireless stream)")
+    parser.add_argument("--camera", default="0", help="Camera source (0 for USB webcam, or 'phone' for wireless stream)")
     parser.add_argument("--max-power", type=float, default=70.0, help="Safety maximum power limit %")
     parser.add_argument("--llm-key", default=None, help="DeepSeek or OpenAI API Key for AI narration")
     parser.add_argument("--web-port", type=int, default=8000, help="Web Dashboard Port")
+    parser.add_argument("--imgsz", type=int, default=640, help="YOLO-Pose 26 Inference Resolution (default: 640)")
     args = parser.parse_args()
 
     print("=" * 70)
-    print("  🚀 OPENHAPTIC-ROLEPLAY // NEXT-GEN AI HAPTIC SYSTEM ONLINE  ")
+    print("  🚀 OPENHAPTIC-ROLEPLAY // YOLO-POSE 26 DENSE TOPOLOGY SYSTEM  ")
     print("=" * 70)
 
     # 1. Initialize Hardware Driver
@@ -77,19 +78,19 @@ def main():
     driver.connect()
     shared_state["driver"] = driver
 
-    # 2. Initialize Vision & Sensor Fusion
-    logger.info("[2/5] Loading YOLO-Pose Vision Engine...")
-    tracker = YOLOPoseTracker()
+    # 2. Initialize YOLO-Pose 26 Vision & Sensor Fusion
+    logger.info(f"[2/5] Loading YOLO-Pose 26 Dense Vision Engine (imgsz={args.imgsz})...")
+    tracker = YOLOPose26Tracker(imgsz=args.imgsz)
     fusion_engine = SensorFusionEngine()
 
     # 3. Initialize Decision & AI Narrative Engine
-    logger.info("[3/5] Initializing Fast-Loop & Slow-Loop Brains...")
+    logger.info("[3/5] Initializing Fast-Loop & Kokoro Voice Engine...")
     fast_loop = FastLoopEngine(driver=driver, max_power_limit=args.max_power)
     slow_loop = SlowLoopEngine(api_key=args.llm_key)
-    tts_engine = TTSEngine()
+    voice_engine = KokoroVoiceEngine()
 
     def on_ai_line(line: str):
-        tts_engine.speak_async(line, on_complete=lambda url: broadcast_ai_dialogue(line, url))
+        voice_engine.speak_async(line, on_complete=lambda url: broadcast_ai_dialogue(line, url))
 
     slow_loop.on_narrative_generated = on_ai_line
 
@@ -108,7 +109,7 @@ def main():
         cam_idx = int(args.camera) if args.camera.isdigit() else args.camera
         cap = cv2.VideoCapture(cam_idx)
 
-    logger.info("[5/5] All Subsystems Active! Ready for Roleplay.")
+    logger.info("[5/5] All Subsystems Active! Halpe-26 Pose Detection Online.")
     print(f"
 👉 PC 控制台面板: http://localhost:{args.web_port}")
     print(f"👉 手机端推流地址: http://[你的局域网IP]:{args.web_port}/phone
@@ -130,7 +131,7 @@ def main():
                 time.sleep(0.04)
                 continue
 
-            # A. YOLO Vision Processing
+            # A. YOLO-Pose 26 Vision Processing
             pose_result, annotated = tracker.process_frame(frame)
             shared_state["annotated_frame"] = annotated
 
@@ -149,7 +150,7 @@ def main():
             # E. Slow-Loop AI Narrative & Story State
             slow_loop.tick(fused_state, telemetry)
 
-            time.sleep(0.02)  # ~50 FPS loop
+            time.sleep(0.02)
 
     except KeyboardInterrupt:
         print("
