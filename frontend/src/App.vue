@@ -13,6 +13,7 @@
         <span class="badge" :class="isConnected ? 'badge-online' : 'badge-offline'">
           {{ isConnected ? 'BACKEND CONNECTED' : 'DISCONNECTED' }}
         </span>
+        <button class="btn-studio" @click="isStudioOpen = true">🧩 剧本工坊</button>
         <button class="btn-calib" @click="isToleranceOpen = true">⚡ 生理耐受校准</button>
         <button class="btn-settings" @click="isSettingsOpen = true">⚙️ 全局设置</button>
         <button class="btn-emergency" @click="sendEmergencyStop">🛑 EMERGENCY STOP (SPACE)</button>
@@ -106,6 +107,7 @@
     <!-- Global Settings Modal -->
     <SettingsModal :isOpen="isSettingsOpen" @close="isSettingsOpen = false" />
     <ToleranceModal :isOpen="isToleranceOpen" @completed="isToleranceOpen = false" />
+    <ScenarioStudio :isOpen="isStudioOpen" @close="isStudioOpen = false" />
   </div>
 </template>
 
@@ -113,11 +115,13 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import SettingsModal from './components/SettingsModal.vue'
 import ToleranceModal from './components/ToleranceModal.vue'
+import ScenarioStudio from './components/ScenarioStudio.vue'
 
 const isConnected = ref(false)
 const isGlitching = ref(false)
 const isSettingsOpen = ref(false)
 const isToleranceOpen = ref(false)
+const isStudioOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
 const activeProfile = ref<{ display_name?: string; user_gender?: string }>({
@@ -261,6 +265,22 @@ onUnmounted(() => {
   color: #ffcc00;
 }
 .badge-offline { border: 1px solid #ff0055; color: #ff0055; }
+
+.btn-studio {
+  background: rgba(0, 255, 136, 0.15);
+  border: 1px solid #00ff88;
+  color: #00ff88;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-studio:hover {
+  background: #00ff88;
+  color: #000;
+  box-shadow: 0 0 15px #00ff88;
+}
 
 .btn-calib {
   background: rgba(176, 0, 255, 0.15);
