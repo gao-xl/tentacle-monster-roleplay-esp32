@@ -13,6 +13,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 from ..core.onnx_infer import ONNXInfer, get_providers_hw_accel
+from .local_context import LocalVisionContextExtractor
 
 
 @dataclass
@@ -38,6 +39,12 @@ class Pose26AnalysisResult:
     is_kneeling: bool = False
     is_surrendering: bool = False
     is_spine_collapsed: bool = False
+
+    # Privacy-Safe Local Visual Context
+    env_brightness: str = "NORMAL"
+    clothes_color: str = "UNKNOWN"
+    face_emotion: str = "UNSEEN"
+    is_face_shaking: bool = False
 
     # Summary Scores
     struggle_score: float = 0.0
@@ -73,6 +80,7 @@ class YOLOPose26Tracker:
         self._prev_kpts: Optional[np.ndarray] = None
         self._prev_time = time.time()
         self._vel_history: List[float] = []
+        self.local_context_ext = LocalVisionContextExtractor(model_path="models/emotion-ferplus-8.onnx")
 
     def _preprocess(self, frame: np.ndarray) -> Tuple[np.ndarray, float, Tuple[int, int]]:
         h, w = frame.shape[:2]
@@ -205,6 +213,13 @@ class YOLOPose26Tracker:
                 self._vel_history.append(speed)
                 if len(self._vel_history) > 6: self._vel_history.pop(0)
                 result.struggle_score = min(100.0, float(np.mean(self._vel_history)))
+
+        # Extract Local Privacy-Safe Vision Context (Color, Light, Emotion)
+        ctx = self.local_context_ext.analyze_context(frame, kpts)
+        result.env_brightness = ctx["brightness"]
+        result.clothes_color = ctx["clothes_color"]
+        result.face_emotion = ctx["face_emotion"]
+        result.is_face_shaking = ctx["is_shaking"]
 
         self._prev_kpts = kpts.copy()
         self._render_hud_26(annotated, result, kpts)

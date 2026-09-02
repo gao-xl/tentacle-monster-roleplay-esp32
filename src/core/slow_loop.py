@@ -77,6 +77,14 @@ class SlowLoopEngine:
         lines.append(f"- 足底生理痉挛指数: {p.toe_curl_spasm:.0f}% (脚趾蜷缩/脚尖紧绷程度)")
         lines.append(f"- 身体剧烈挣扎指数: {p.struggle_score:.0f}/100")
         lines.append(f"- 身体平衡: {'【已失去平衡彻底倒地/跪倒】' if p.is_collapsed else '仍在勉强支撑姿态'}")
+        
+        # Add Privacy-Safe Vision Context Cues
+        lines.append("[环境与微表情细节 (Local Vision)]:")
+        lines.append(f"- 环境光线: {p.env_brightness}")
+        lines.append(f"- 玩家衣着: 穿着 {p.clothes_color} 战服")
+        lines.append(f"- 玩家面部表情: {p.face_emotion}")
+        if p.is_face_shaking:
+            lines.append("- ⚠️ 玩家正在剧烈喘息摇晃，画面出现模糊！")
 
         if t and t.is_connected:
             powers_str = ", ".join([f"回路{k}:{v:.0f}%" for k, v in t.channel_powers.items()])
@@ -85,7 +93,7 @@ class SlowLoopEngine:
                 lines.append("- ⚠️ 警报: 玩家电极贴片脱落！试图逃脱束缚！")
 
         lines.append("
-请根据当前剧情幕数与上述现场真实反应，以调皮戏谑的小触手语气说出 2~3 句生动的剧情台词。")
+请根据剧情幕数、骨骼姿态以及【环境光线、衣服颜色、脸部痛苦表情】，以调皮戏谑的触手语气说出 2~3 句生动台词。要求巧妙点出玩家的衣服颜色或此刻的痛苦表情以增加打破次元壁的压迫感！")
         return "
 ".join(lines)
 
