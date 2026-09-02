@@ -1,9 +1,8 @@
 """
-FastAPI Dashboard & WebRTC Gateway Server for OpenHaptic-Roleplay (v2.0)
-Endpoints:
-- /api/webrtc_offer: WebRTC SDP Negotiation
-- /video_feed: Real-time MJPEG debug stream
-- /ws: Biometric telemetry broadcast
+Headless FastAPI Gateway Server for OpenHaptic-Roleplay (v4.0)
+Decoupled Architecture:
+- Exposes CORS-enabled REST & WebSocket APIs for any independent frontend (Vue 3 / React)
+- Mounts production built static files from 'frontend/dist' if available
 """
 
 import os
@@ -13,7 +12,8 @@ import logging
 from typing import Optional, Callable
 import cv2
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -44,42 +44,51 @@ def create_app(
     on_command: Optional[Callable[[dict], None]] = None,
     on_mode_switch: Optional[Callable[[str], None]] = None
 ) -> FastAPI:
-    app = FastAPI(title="OpenHaptic-Roleplay v2.0")
+    app = FastAPI(title="OpenHaptic Headless API Engine v4.0")
+
+    # Enable full CORS for local Vue/React dev server (e.g. localhost:5173)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     static_dir = os.path.join(os.path.dirname(__file__), "static")
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    frontend_dist_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
 
-    # Broadcast websocket connections
     active_websockets = set()
     latest_jpeg_frame = None
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index():
-        with open(os.path.join(static_dir, "index.html"), "r", encoding="utf-8") as f:
-            return f.read()
-
+    # 1. Phone Camera Minimal WebRTC Route (Always served)
     @app.get("/phone", response_class=HTMLResponse)
     async def phone():
-        with open(os.path.join(static_dir, "phone.html"), "r", encoding="utf-8") as f:
+        phone_html_path = os.path.join(static_dir, "phone.html")
+        with open(phone_html_path, "r", encoding="utf-8") as f:
             return f.read()
 
+    # 2. WebRTC SDP Negotiation API
     @app.post("/api/webrtc_offer")
     async def webrtc_offer(payload: WebRTCOfferPayload):
         answer = await webrtc_mgr.handle_offer(payload.sdp, payload.type)
         return answer
 
+    # 3. Action Command API
     @app.post("/api/command")
     async def handle_command(cmd: CommandPayload):
         if on_command:
             on_command(cmd.dict())
         return {"status": "ok"}
 
+    # 4. Mode Switch API
     @app.post("/api/switch_mode")
     async def handle_mode(payload: ModePayload):
         if on_mode_switch:
             on_mode_switch(payload.mode)
         return {"status": "ok", "mode": payload.mode}
 
+    # 5. High-Frequency Realtime WebSocket Broadcast
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
         await ws.accept()
@@ -90,7 +99,7 @@ def create_app(
         except WebSocketDisconnect:
             active_websockets.discard(ws)
 
-    # Frame generator for debug UI
+    # 6. MJPEG Stream Route
     def gen_frames():
         nonlocal latest_jpeg_frame
         while True:
@@ -103,6 +112,16 @@ def create_app(
     @app.get("/video_feed")
     def video_feed():
         return StreamingResponse(gen_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+    # 7. Auto-Mount Built Vue 3 Frontend if 'frontend/dist' exists
+    if os.path.exists(frontend_dist_dir):
+        app.mount("/", StaticFiles(directory=frontend_dist_dir, html=True), name="frontend")
+    else:
+        # Fallback to legacy static index if not yet compiled
+        @app.get("/", response_class=HTMLResponse)
+        async def fallback_index():
+            with open(os.path.join(static_dir, "index.html"), "r", encoding="utf-8") as f:
+                return f.read()
 
     app.state.broadcast_telemetry = lambda data: asyncio.create_task(
         _broadcast_json(active_websockets, data)
