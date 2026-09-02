@@ -3,158 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WebRTC Ultra-Low Latency Stream</title>
+    <title>OpenHaptic // Wireless Vision Node</title>
     <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: #06080e;
+            background: #000;
             color: #00f0ff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0; padding: 0;
-            display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-            height: 100vh; overflow: hidden;
+            width: 100vw; height: 100vh; overflow: hidden;
+            display: flex; flex-direction: column; justify-content: space-between; align-items: center;
         }
-        #localVideo {
+        #videoFeed {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1;
         }
-        .hud-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
-            pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
-            padding: 20px; box-sizing: border-box; background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.85) 100%);
-        }
         .hud-header {
-            background: rgba(10,14,24,0.75); padding: 12px 18px; border-radius: 8px; border: 1px solid #00f0ff;
-            font-size: 13px; display: flex; justify-content: space-between; backdrop-filter: blur(8px);
+            position: absolute; top: 15px; left: 15px; right: 15px; z-index: 2;
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(0, 0, 0, 0.65); padding: 10px 16px; border-radius: 20px;
+            border: 1px solid rgba(0, 240, 255, 0.4); backdrop-filter: blur(8px);
+            font-size: 13px; font-weight: bold; letter-spacing: 1px;
         }
-        .controls { z-index: 3; pointer-events: auto; display: flex; gap: 14px; margin-bottom: 25px; }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%; background: #ffcc00; display: inline-block; margin-right: 6px;
+        }
+        .controls {
+            position: absolute; bottom: 30px; z-index: 2; display: flex; gap: 16px;
+        }
         .btn {
             background: #00f0ff; color: #000; border: none; padding: 14px 28px; border-radius: 30px;
-            font-weight: bold; font-size: 16px; box-shadow: 0 0 20px rgba(0,240,255,0.6); cursor: pointer;
+            font-weight: 900; font-size: 15px; letter-spacing: 1px; cursor: pointer;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.6); transition: all 0.2s ease;
+        }
+        .btn-flip {
+            background: rgba(255, 255, 255, 0.15); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: none;
         }
     </style>
 </head>
 <body>
 
-    <video id="localVideo" autoplay playsinline muted></video>
+    <video id="videoFeed" autoplay playsinline muted></video>
 
-    <div class="hud-overlay">
-        <div class="hud-header">
-            <span>⚡ WebRTC: <span id="rtcStatus" style="color: #ffcc00;">IDLE</span></span>
-            <span>GYRO: <span id="gyroTag">0° / 0°</span></span>
-        </div>
-        
-        <div class="controls">
-            <button class="btn" id="btnConnect" onclick="startWebRTC()">🚀 启动 WebRTC 极速推流</button>
-            <button class="btn" style="background: #ff0055; color: #fff;" onclick="toggleCamera()">🔄 切换镜头</button>
-        </div>
+    <div class="hud-header">
+        <div><span class="status-dot" id="statusDot"></span><span id="txtStatus">STANDBY</span></div>
+        <div style="color: #888; font-size: 11px;">1080P/60FPS NODE</div>
+    </div>
+
+    <div class="controls">
+        <button class="btn" id="btnConnect" onclick="toggleStream()">🚀 开始视频推流</button>
+        <button class="btn btn-flip" onclick="flipCamera()">🔄 翻转镜头</button>
     </div>
 
     <script>
         let pc = null;
-        let dataChannel = null;
         let localStream = null;
-        let facingMode = "environment";
-        let isRunning = false;
-
-        let gyroData = { roll: 0, pitch: 0, yaw: 0, ax: 0, ay: 0, az: 0 };
-
-        // Listen for High-Frequency Gyroscope
-        if (window.DeviceOrientationEvent) {
-            window.addEventListener('deviceorientation', (e) => {
-                gyroData.roll = Math.round(e.gamma || 0);
-                gyroData.pitch = Math.round(e.beta || 0);
-                gyroData.yaw = Math.round(e.alpha || 0);
-                document.getElementById("gyroTag").innerText = `${gyroData.roll}° / ${gyroData.pitch}°`;
-                sendTelemetry();
-            });
-        }
-
-        if (window.DeviceMotionEvent) {
-            window.addEventListener('devicemotion', (e) => {
-                if (e.accelerationIncludingGravity) {
-                    gyroData.ax = (e.accelerationIncludingGravity.x || 0).toFixed(2);
-                    gyroData.ay = (e.accelerationIncludingGravity.y || 0).toFixed(2);
-                    gyroData.az = (e.accelerationIncludingGravity.z || 0).toFixed(2);
-                }
-            });
-        }
+        let isStreaming = false;
+        let facingMode = "environment"; // Default back camera for whole-body pose capture
 
         async function initCamera() {
             if (localStream) {
                 localStream.getTracks().forEach(t => t.stop());
             }
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } },
-                audio: false
-            });
-            document.getElementById("localVideo").srcObject = localStream;
-        }
-
-        function toggleCamera() {
-            facingMode = (facingMode === "user") ? "environment" : "user";
-            initCamera();
-        }
-
-        async function startWebRTC() {
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().catch(console.error);
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: facingMode,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 60, min: 30 }
+                    },
+                    audio: false
+                });
+                document.getElementById("videoFeed").srcObject = localStream;
+            } catch (err) {
+                console.error("Camera access failed: ", err);
+                alert("无法访问摄像头，请检查权限！");
             }
+        }
 
-            if (isRunning) {
+        async function toggleStream() {
+            if (isStreaming) {
                 if (pc) pc.close();
-                isRunning = false;
-                document.getElementById("btnConnect").innerText = "🚀 启动 WebRTC 极速推流";
+                isStreaming = false;
+                document.getElementById("btnConnect").innerText = "🚀 开始视频推流";
                 document.getElementById("btnConnect").style.background = "#00f0ff";
-                document.getElementById("rtcStatus").innerText = "CLOSED";
+                document.getElementById("txtStatus").innerText = "DISCONNECTED";
+                document.getElementById("statusDot").style.background = "#ff0055";
                 return;
             }
 
-            document.getElementById("rtcStatus").innerText = "CONNECTING...";
-            await initCamera();
+            document.getElementById("txtStatus").innerText = "NEGOTIATING...";
+            document.getElementById("statusDot").style.background = "#ffcc00";
+
+            if (!localStream) await initCamera();
 
             pc = new RTCPeerConnection({
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
             });
 
-            // Create 100Hz DataChannel for Gyro Telemetry
-            dataChannel = pc.createDataChannel("telemetry", { ordered: false, maxRetransmits: 0 });
-            dataChannel.onopen = () => {
-                console.log("[DataChannel] Connected");
-            };
-
-            // Add Video Track
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
             pc.oniceconnectionstatechange = () => {
                 const state = pc.iceConnectionState;
-                document.getElementById("rtcStatus").innerText = state.toUpperCase();
                 if (state === "connected" || state === "completed") {
-                    document.getElementById("rtcStatus").style.color = "#00ff88";
-                    document.getElementById("btnConnect").innerText = "⏹ 停止 WebRTC 推流";
+                    document.getElementById("txtStatus").innerText = "LIVE STREAMING";
+                    document.getElementById("statusDot").style.background = "#00ff88";
+                    document.getElementById("btnConnect").innerText = "⏹ 停止推流";
                     document.getElementById("btnConnect").style.background = "#ffcc00";
-                    isRunning = true;
+                    isStreaming = true;
                 }
             };
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            // Send Offer to Server
-            const resp = await fetch('/api/webrtc_offer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
-            });
-            const answer = await resp.json();
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        }
-
-        function sendTelemetry() {
-            if (dataChannel && dataChannel.readyState === "open") {
-                dataChannel.send(JSON.stringify({ type: "imu", data: gyroData }));
+            try {
+                const resp = await fetch('/api/webrtc_offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+                });
+                const answer = await resp.json();
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            } catch (e) {
+                console.error("WebRTC Negotiation Failed: ", e);
+                document.getElementById("txtStatus").innerText = "FAILED";
+                document.getElementById("statusDot").style.background = "#ff0055";
             }
         }
 
-        initCamera();
+        function flipCamera() {
+            facingMode = (facingMode === "environment") ? "user" : "environment";
+            initCamera().then(() => {
+                if (isStreaming) {
+                    // Replace video track seamlessly
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const sender = pc.getSenders().find(s => s.track.kind === 'video');
+                    if (sender) sender.replaceTrack(videoTrack);
+                }
+            });
+        }
+
+        // Auto-init on load
+        window.addEventListener('load', initCamera);
     </script>
 </body>
 </html>
