@@ -18,6 +18,7 @@ from .restrained_trial import RestrainedTrialMode
 from .souls_boss_battle import SoulsBossBattleMode
 from .abyssal_campaign import AbyssalCampaignMode
 from .guided_conditioning import GuidedConditioningMode
+from .neural_parkour import NeuralParkourMode
 
 from ..vision.pose26_tracker import Pose26AnalysisResult
 from ..core.quad_channel_sequencer import QuadChannelSequencer
@@ -79,6 +80,8 @@ class CentralGameManager:
             self.active_mode = RestrainedTrialMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
         elif mode_key == "souls":
             self.active_mode = SoulsBossBattleMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
+        elif mode_key == "parkour":
+            self.active_mode = NeuralParkourMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
         elif mode_key == "guided":
             self.active_mode = GuidedConditioningMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
         elif mode_key == "abyssal":
