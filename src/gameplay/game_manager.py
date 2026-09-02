@@ -23,6 +23,7 @@ from .cleaning_discipline import CleaningDisciplineMode
 from .llm_story_director import LLMStoryDirectorMode
 from .multi_tier_edging_protocol import MultiTierEdgingProtocolMode
 from .shame_inspection_master import ShameInspectionMasterMode
+from .extreme_exhibition import ExtremeExhibitionMode
 
 from ..vision.pose26_tracker import Pose26AnalysisResult
 from ..core.quad_channel_sequencer import QuadChannelSequencer
@@ -84,6 +85,8 @@ class CentralGameManager:
             self.active_mode = RestrainedTrialMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
         elif mode_key == "souls":
             self.active_mode = SoulsBossBattleMode(self.sequencer, self.profile, self.voice_engine, self.on_broadcast)
+        elif mode_key == "exhibition":
+            self.active_mode = ExtremeExhibitionMode(self.sequencer, self.profile, self.voice_engine, on_event_broadcast=self.on_broadcast)
         elif mode_key == "shame_master":
             self.active_mode = ShameInspectionMasterMode(self.sequencer, self.profile, self.voice_engine, on_event_broadcast=self.on_broadcast)
         elif mode_key == "edging_protocol":
