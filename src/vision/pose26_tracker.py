@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict
 from ..core.onnx_infer import ONNXInfer, get_providers_hw_accel
 from .local_context import LocalVisionContextExtractor
+from .one_euro_filter import Skeleton26OneEuroFilter
 
 
 @dataclass
@@ -84,6 +85,7 @@ class YOLOPose26Tracker:
         self._vel_history: List[float] = []
         
         self.local_context_ext = LocalVisionContextExtractor(model_path="models/emotion-ferplus-8.onnx")
+        self.one_euro_filter = Skeleton26OneEuroFilter(num_kpts=26, mincutoff=1.0, beta=0.04)
         
         # v3.0 Calibration System
         self.calibration = PlayerCalibrationData()
@@ -144,6 +146,9 @@ class YOLOPose26Tracker:
         kpts[:, 0] = (kpts_raw[:, 0] - pads[0]) / scale
         kpts[:, 1] = (kpts_raw[:, 1] - pads[1]) / scale
         kpts[:, 2] = kpts_raw[:, 2]
+
+        # Apply Temporal One-Euro Filter to eliminate jitter & occlusion jumps
+        kpts = self.one_euro_filter.filter_keypoints(kpts, timestamp=now)
 
         result.has_person = True
         result.confidence = float(obj_conf[best_idx])

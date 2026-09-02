@@ -1,0 +1,46 @@
+name: "赛博朋克审讯室 (Cyber Interrogation Chamber)"
+description: "玩家作为潜入失败的特工，被固定在全息审讯椅上，AI审讯官利用魔力神经电流破除心理防线。"
+start_node: "ACT1_ARREST"
+
+nodes:
+  - id: "ACT1_ARREST"
+    title: "第一幕：神经电流接入"
+    lore: "你被束缚在冰冷的金属椅上，两组神经贴片强行贴在了你的核心与腿部。"
+    entry_voice: "身份核验完毕。战败特工，你的嘴能硬过这套神经脉冲吗？"
+    advance_overload: 35.0
+    next_node: "ACT2_RESISTANCE"
+    rules:
+      - id: "core_guard_check"
+        trigger: "core_covered"
+        threshold: 1.0
+        action: "preemption_voice"
+        payload: { text: "把手拿开！在审讯室里你没有遮挡的权利！" }
+        cooldown: 4.0
+
+  - id: "ACT2_RESISTANCE"
+    title: "第二幕：抗拒与破防电击"
+    lore: "审讯官加大了双路流动波的频率，寻找你的心理防线弱点。"
+    entry_voice: "检测到微弱心率加速。看来你的身体比你的口供诚实得多呢。"
+    advance_overload: 75.0
+    next_node: "ACT3_FINAL_CONFESSION"
+    rules:
+      - id: "toe_spasm_react"
+        trigger: "toe_curl_above"
+        threshold: 35.0
+        action: "shock_burst"
+        payload: { power: 65.0, channel: 0 }
+        cooldown: 3.0
+
+  - id: "ACT3_FINAL_CONFESSION"
+    title: "第三幕：全域过载与口供招供"
+    lore: "四贴片全域共振爆发，心理防线彻底瓦解。"
+    entry_voice: "很好……传导器过载达到临界点了。乖乖说出你的秘密吧，特工。"
+    advance_overload: 100.0
+    next_node: "ACT3_FINAL_CONFESSION"
+    rules:
+      - id: "burst_flow"
+        trigger: "struggle_above"
+        threshold: 30.0
+        action: "flow_wave"
+        payload: {}
+        cooldown: 5.0
