@@ -1,9 +1,10 @@
 """
-YOLO-Pose 26 with 2.5D Depth & Geometric Perspective Verification (v2.0)
-Solves the 2D Projection Perspective Error:
-- Verifies Forearm/Elbow-Wrist Length Ratio to estimate Z-Depth
-- If hands reach toward camera (foreshortened/enlarged), Z-depth separates from Point 19 Core
-- Eliminates false-positive defense breach triggers
+YOLO-Pose 26 with Dynamic T-Pose Calibration (v3.0)
+Eliminates hardcoded thresholds by calibrating to the user's specific skeletal proportions:
+- Torso Height (Neck to Pelvis)
+- Leg Length (Hip to Ankle)
+- Shoulder Width
+Dynamic thresholds are generated based on these baseline pixel measurements.
 """
 
 import math
@@ -11,9 +12,21 @@ import time
 import cv2
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from ..core.onnx_infer import ONNXInfer, get_providers_hw_accel
 from .local_context import LocalVisionContextExtractor
+
+
+@dataclass
+class PlayerCalibrationData:
+    is_calibrated: bool = False
+    shoulder_width: float = 100.0
+    torso_height: float = 120.0
+    leg_length: float = 150.0
+    
+    # Dynamically generated thresholds
+    thresh_toe_curl: float = 15.0
+    thresh_hands_core_dist: float = 50.0
 
 
 @dataclass
@@ -21,35 +34,24 @@ class Pose26AnalysisResult:
     has_person: bool = False
     confidence: float = 0.0
 
-    # Anchors
-    core_weakpoint_pt: Optional[Tuple[float, float]] = None   # Point 19: Pelvis Root
-    neck_pt: Optional[Tuple[float, float]] = None              # Point 18: Neck Center
-    spine_vector: Optional[Tuple[float, float]] = None
-
-    # 2.5D Verified True Defense
-    hands_covering_core: bool = False     # 3D Verified: (X,Y distance close AND Z-depth aligned)
-    hands_covering_chest: bool = False
-    hands_covering_neck: bool = False
-    hands_extended_to_camera: bool = False # Hands pushed toward lens (Not covering body)
-    wrist_to_core_dist_norm: float = 1.0
-
-    # Foot Physiology & Tremor Metrics (Points 20-25)
-    toe_curl_index: float = 0.0           # Foot spasm under stimulation
-    feet_tiptoeing: bool = False
-    is_kneeling: bool = False
-    is_surrendering: bool = False
+    core_weakpoint_pt: Optional[Tuple[float, float]] = None
+    neck_pt: Optional[Tuple[float, float]] = None
+    
+    hands_covering_core: bool = False
+    hands_extended_to_camera: bool = False
+    
+    toe_curl_index: float = 0.0
     is_spine_collapsed: bool = False
-
-    # Privacy-Safe Local Visual Context
+    is_surrendering: bool = False
+    
+    struggle_score: float = 0.0
+    keypoints: Optional[np.ndarray] = None
+    
+    # Local Vision Context
     env_brightness: str = "NORMAL"
     clothes_color: str = "UNKNOWN"
     face_emotion: str = "UNSEEN"
     is_face_shaking: bool = False
-
-    # Summary Scores
-    struggle_score: float = 0.0
-    posture_tag: str = "NEUTRAL"
-    keypoints: Optional[np.ndarray] = None
 
 
 SKELETON_26_EDGES = [
@@ -80,7 +82,12 @@ class YOLOPose26Tracker:
         self._prev_kpts: Optional[np.ndarray] = None
         self._prev_time = time.time()
         self._vel_history: List[float] = []
+        
         self.local_context_ext = LocalVisionContextExtractor(model_path="models/emotion-ferplus-8.onnx")
+        
+        # v3.0 Calibration System
+        self.calibration = PlayerCalibrationData()
+        self._calib_frames = []
 
     def _preprocess(self, frame: np.ndarray) -> Tuple[np.ndarray, float, Tuple[int, int]]:
         h, w = frame.shape[:2]
@@ -142,79 +149,77 @@ class YOLOPose26Tracker:
         result.confidence = float(obj_conf[best_idx])
         result.keypoints = kpts
 
-        # 1. 26-Point Anchors
-        if len(kpts) >= 26:
-            if kpts[19, 2] > 0.3:
-                result.core_weakpoint_pt = (float(kpts[19, 0]), float(kpts[19, 1]))
-            if kpts[18, 2] > 0.3:
-                result.neck_pt = (float(kpts[18, 0]), float(kpts[18, 1]))
+        # ==========================================
+        # 1. DYNAMIC CALIBRATION PHASE
+        # ==========================================
+        if not self.calibration.is_calibrated:
+            if self._run_calibration(kpts):
+                self.calibration.is_calibrated = True
+                print(f"[CALIBRATION COMPLETE] Torso: {self.calibration.torso_height:.1f}px, Leg: {self.calibration.leg_length:.1f}px")
+            
+            # Draw Calibration HUD
+            cv2.putText(annotated, f"CALIBRATING SKELETON... {len(self._calib_frames)}/30", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+            return result, annotated
 
-            if result.neck_pt and result.core_weakpoint_pt:
-                dx = result.core_weakpoint_pt[0] - result.neck_pt[0]
-                dy = result.core_weakpoint_pt[1] - result.neck_pt[1]
-                spine_angle = math.degrees(math.atan2(abs(dx), max(1.0, dy)))
-                if spine_angle > 55.0:
-                    result.is_spine_collapsed = True
+        # ==========================================
+        # 2. CALIBRATED PHYSIOLOGICAL ANALYSIS
+        # ==========================================
+        if kpts[19, 2] > 0.3: result.core_weakpoint_pt = (float(kpts[19, 0]), float(kpts[19, 1]))
+        if kpts[18, 2] > 0.3: result.neck_pt = (float(kpts[18, 0]), float(kpts[18, 1]))
 
-            # Foot Toe Spasm
-            toe_angles = []
-            for toe_idx, heel_idx in [(20, 22), (23, 25)]:
-                if kpts[toe_idx, 2] > 0.3 and kpts[heel_idx, 2] > 0.3:
-                    f_dy = kpts[toe_idx, 1] - kpts[heel_idx, 1]
-                    if f_dy > 15:
-                        toe_angles.append(min(100.0, f_dy * 2.5))
-            if toe_angles:
-                result.toe_curl_index = float(np.mean(toe_angles))
-
-        # 2. 2.5D Depth & Perspective Verification (Solve 2D Projection Ambiguity)
-        torso_scale = 120.0
+        # Dynamic Spine Collapse
         if result.neck_pt and result.core_weakpoint_pt:
-            torso_scale = max(40.0, np.linalg.norm(np.array(result.neck_pt) - np.array(result.core_weakpoint_pt)))
+            dx = result.core_weakpoint_pt[0] - result.neck_pt[0]
+            dy = result.core_weakpoint_pt[1] - result.neck_pt[1]
+            spine_angle = math.degrees(math.atan2(abs(dx), max(1.0, dy)))
+            if spine_angle > 55.0:
+                result.is_spine_collapsed = True
 
+        # Dynamic Toe Curl Spasm (Threshold based on 10% of Leg Length)
+        toe_angles = []
+        for toe_idx, heel_idx in [(20, 22), (23, 25)]:
+            if kpts[toe_idx, 2] > 0.3 and kpts[heel_idx, 2] > 0.3:
+                f_dy = kpts[toe_idx, 1] - kpts[heel_idx, 1]
+                # Normalize against calibrated threshold instead of hardcoded '15'
+                if f_dy > self.calibration.thresh_toe_curl:
+                    toe_angles.append(min(100.0, (f_dy / self.calibration.thresh_toe_curl) * 20.0))
+        if toe_angles:
+            result.toe_curl_index = float(np.mean(toe_angles))
+
+        # Dynamic Core Defense & Hands Reach
         l_sh, r_sh = kpts[5], kpts[6]
         l_el, r_el = kpts[7], kpts[8]
         l_wr, r_wr = kpts[9], kpts[10]
 
-        # Calculate Forearm Lengths to verify Z-axis perspective extension
-        # If forearm on screen is abnormally short while wrist overlaps torso, hand is extending towards camera
-        # If forearm is standard length and wrist is at torso, hand is truly touching the body!
         for el, wr, sh in [(l_el, l_wr, l_sh), (r_el, r_wr, r_sh)]:
             if el[2] > 0.3 and wr[2] > 0.3 and sh[2] > 0.3:
                 upper_arm_len = np.linalg.norm(el[:2] - sh[:2])
                 forearm_len = np.linalg.norm(wr[:2] - el[:2])
-                
-                # Check Foreshortening (Perspective projection towards lens)
                 if forearm_len < upper_arm_len * 0.35:
                     result.hands_extended_to_camera = True
 
-        # True Core Defense Check
         if result.core_weakpoint_pt is not None:
             c_pt = np.array(result.core_weakpoint_pt)
             min_dist = 999.0
             for wr in [l_wr, r_wr]:
                 if wr[2] > 0.3:
-                    d = np.linalg.norm(wr[:2] - c_pt)
-                    min_dist = min(min_dist, d)
+                    min_dist = min(min_dist, np.linalg.norm(wr[:2] - c_pt))
             
-            result.wrist_to_core_dist_norm = min(1.0, min_dist / (torso_scale * 1.5))
-            
-            # Defense is ONLY verified if 2D distance is close AND hands are NOT reaching out to lens
-            if min_dist < torso_scale * 0.42 and not result.hands_extended_to_camera:
+            # Check against normalized torso core distance (approx 40% of torso height)
+            if min_dist < self.calibration.thresh_hands_core_dist and not result.hands_extended_to_camera:
                 result.hands_covering_core = True
-            else:
-                result.hands_covering_core = False
 
-        # 3. Motion Velocity
+        # Motion Velocity
         if self._prev_kpts is not None and len(self._prev_kpts) == len(kpts):
             valid = (kpts[:, 2] > 0.35) & (self._prev_kpts[:, 2] > 0.35)
             if np.sum(valid) >= 6:
                 disp = np.linalg.norm(kpts[valid, :2] - self._prev_kpts[valid, :2], axis=1)
-                speed = (np.mean(disp) / dt) / torso_scale * 20.0
+                speed = (np.mean(disp) / dt) / self.calibration.torso_height * 30.0
                 self._vel_history.append(speed)
                 if len(self._vel_history) > 6: self._vel_history.pop(0)
                 result.struggle_score = min(100.0, float(np.mean(self._vel_history)))
 
-        # Extract Local Privacy-Safe Vision Context (Color, Light, Emotion)
+        # Local Vision Context
         ctx = self.local_context_ext.analyze_context(frame, kpts)
         result.env_brightness = ctx["brightness"]
         result.clothes_color = ctx["clothes_color"]
@@ -226,31 +231,37 @@ class YOLOPose26Tracker:
 
         return result, annotated
 
-    def _render_hud_26(self, img: np.ndarray, res: Pose26AnalysisResult, kpts: np.ndarray):
-        h, w = img.shape[:2]
+    def _run_calibration(self, kpts: np.ndarray) -> bool:
+        """Collects 30 frames to calculate baseline skeletal proportions."""
+        required = [5, 6, 18, 19, 11, 13, 15] # shoulders, neck, core, left leg chain
+        if not all(kpts[i, 2] > 0.4 for i in required):
+            return False
+            
+        self._calib_frames.append(kpts)
+        if len(self._calib_frames) < 30:
+            return False
+            
+        # Compute medians to ignore outliers
+        s_ws, t_hs, l_ls = [], [], []
+        for f in self._calib_frames:
+            s_ws.append(np.linalg.norm(f[5, :2] - f[6, :2]))
+            t_hs.append(np.linalg.norm(f[18, :2] - f[19, :2]))
+            l_ls.append(np.linalg.norm(f[11, :2] - f[13, :2]) + np.linalg.norm(f[13, :2] - f[15, :2]))
+            
+        self.calibration.shoulder_width = float(np.median(s_ws))
+        self.calibration.torso_height = float(np.median(t_hs))
+        self.calibration.leg_length = float(np.median(l_ls))
+        
+        # Set dynamic physiological thresholds
+        self.calibration.thresh_toe_curl = self.calibration.leg_length * 0.08
+        self.calibration.thresh_hands_core_dist = self.calibration.torso_height * 0.45
+        
+        return True
 
+    def _render_hud_26(self, img: np.ndarray, res: Pose26AnalysisResult, kpts: np.ndarray):
         for p1, p2 in SKELETON_26_EDGES:
             if p1 < len(kpts) and p2 < len(kpts):
                 if kpts[p1, 2] > 0.35 and kpts[p2, 2] > 0.35:
                     pt1 = tuple(map(int, kpts[p1, :2]))
                     pt2 = tuple(map(int, kpts[p2, :2]))
-                    edge_color = (255, 0, 200) if (p1 in [18, 19] or p2 in [18, 19]) else (0, 240, 255)
-                    cv2.line(img, pt1, pt2, edge_color, 2, cv2.LINE_AA)
-
-        if res.core_weakpoint_pt:
-            cx, cy = map(int, res.core_weakpoint_pt)
-            ring_color = (0, 0, 255) if res.hands_covering_core else (0, 255, 100)
-            cv2.circle(img, (cx, cy), 18, ring_color, 2)
-            cv2.drawMarker(img, (cx, cy), ring_color, cv2.MARKER_TILTED_CROSS, 14, 2)
-            
-            tag = "POINT 19 // CORE LOCKED" if res.hands_covering_core else "POINT 19 // CORE OPEN"
-            if res.hands_extended_to_camera:
-                tag = "POINT 19 // CAMERA EXTENSION (IGNORED)"
-                ring_color = (255, 200, 0)
-            cv2.putText(img, tag, (cx - 75, cy + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, ring_color, 1)
-
-        cv2.rectangle(img, (0, 0), (w, 50), (10, 15, 25), -1)
-        cv2.line(img, (0, 50), (w, 50), (0, 240, 255), 1)
-        
-        status_txt = f"HALPE-26 2.5D // DEFENSE: {'VERIFIED LOCKED' if res.hands_covering_core else 'EXPOSED'}"
-        cv2.putText(img, status_txt, (15, 32), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 255, 0), 1)
+                    cv2.line(img, pt1, pt2, (0, 240, 255), 2, cv2.LINE_AA)
