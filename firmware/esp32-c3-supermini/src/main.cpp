@@ -1,66 +1,69 @@
 /**
  * @file main.cpp
- * @brief OpenHaptic-Roleplay Universal Controller Firmware for ESP32-C3 SuperMini
+ * @brief OpenHaptic-Roleplay Dual-Circuit Independent Firmware for ESP32-C3 SuperMini
  * 
- * Supports:
- * - Native USB-CDC / UART Serial command parser
- * - 4-channel Hardware LEDC PWM outputs (GPIO 0, 1, 2, 3)
- * - Safe Hardware Watchdog (2000ms auto-failsafe shutoff)
- * - Decay pulse (HIT), continuous level (SET), dynamic oscillation (WAVE), and emergency stop (STOP)
- * - Optional I2C IMU Gyroscope / Accelerometer (MPU6050 / QMI8658 on SDA=GPIO4, SCL=GPIO5)
- * - Onboard LED (GPIO 8) status indication
+ * True Dual-Loop Independent Hardware Architecture:
+ * - Loop A (Channel 0 / Pads 1-2): Driven by GPIO 0 (LEDC Channel 0, Timer 0)
+ * - Loop B (Channel 1 / Pads 3-4): Driven by GPIO 1 (LEDC Channel 1, Timer 1)
+ * - Atomic Dual Setting: 'DUAL <lvl_a> <lvl_b>'
+ * - Spatial Traveling Flow: 'FLOW <freq> <phase_deg> <min> <max>'
+ * - Independent HIT Decay & Waveform Oscillators
+ * - 2000ms Dual-Safety Watchdog & Emergency STOP
+ * - I2C Gyroscope IMU (MPU6050 on SDA=GPIO4, SCL=GPIO5)
  */
 
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
 
-// Pin Definitions for ESP32-C3 SuperMini
-#define PIN_LED         8    // Onboard Blue/Green LED (Active LOW on SuperMini)
-#define NUM_CHANNELS    4
+#define PIN_LED         8    // Onboard Status LED (Active LOW)
 
-// Default PWM Output Pins on SuperMini header
-const uint8_t CH_PINS[NUM_CHANNELS] = {0, 1, 2, 3};
+// Dual Independent Circuit Pinout
+#define PIN_LOOP_A      0    // Loop A (Pads 1-2: Core / Upper)
+#define PIN_LOOP_B      1    // Loop B (Pads 3-4: Legs / Lower)
+#define NUM_LOOPS       2
 
-// Optional I2C IMU Pins
+const uint8_t LOOP_PINS[NUM_LOOPS] = {PIN_LOOP_A, PIN_LOOP_B};
+
+// I2C IMU Pins
 #define PIN_I2C_SDA     4
 #define PIN_I2C_SCL     5
 #define MPU6050_ADDR    0x68
-
 static bool imu_available = false;
 
-// LEDC PWM Configuration
-#define PWM_FREQ        1000 // 1 kHz PWM frequency
-#define PWM_RESOLUTION  8    // 8-bit resolution (0-255)
+// PWM Configuration (1 kHz, 8-bit resolution 0-255)
+#define PWM_FREQ        1000
+#define PWM_RESOLUTION  8
 
 // Safety Watchdog
 #define WATCHDOG_TIMEOUT_MS 2000
 static uint32_t last_cmd_time = 0;
 static bool watchdog_triggered = false;
 
-// Channel States
-struct ChannelState {
+// Dual Circuit Independent State Structure
+struct LoopState {
     uint8_t target_level;      // 0 - 100%
-    float current_level;      // 0.0 - 100.0%
+    float current_level;       // 0.0 - 100.0%
     
-    // HIT (Decay) mode
+    // Independent HIT Decay Mode
     bool in_hit_mode;
     float decay_rate_per_ms;
     
-    // WAVE mode
+    // Independent Wave Oscillation Mode
     bool in_wave_mode;
     float wave_freq;
     uint8_t wave_min;
     uint8_t wave_max;
+    float phase_offset_rad;    // Spatial phase shift (e.g. 180 deg for alternating flow)
     uint32_t wave_start_time;
 };
 
-static ChannelState channels[NUM_CHANNELS];
+static LoopState loops[NUM_LOOPS];
 
 // Prototypes
-void apply_channel_pwm(uint8_t ch, uint8_t level_percent);
+void apply_loop_pwm(uint8_t loop_idx, uint8_t level_percent);
 void process_command(String cmd);
-void emergency_stop();
+void emergency_stop_dual();
 void init_imu();
 void read_and_report_imu();
 
@@ -70,22 +73,21 @@ void setup() {
     pinMode(PIN_LED, OUTPUT);
     digitalWrite(PIN_LED, HIGH);
 
-    // Initialize PWM Channels
-    for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-        ledcAttach(CH_PINS[i], PWM_FREQ, PWM_RESOLUTION);
-        channels[i].target_level = 0;
-        channels[i].current_level = 0.0f;
-        channels[i].in_hit_mode = false;
-        channels[i].in_wave_mode = false;
-        apply_channel_pwm(i, 0);
+    // Initialize Dual Independent LEDC PWM Channels
+    for (uint8_t i = 0; i < NUM_LOOPS; i++) {
+        ledcAttach(LOOP_PINS[i], PWM_FREQ, PWM_RESOLUTION);
+        loops[i].target_level = 0;
+        loops[i].current_level = 0.0f;
+        loops[i].in_hit_mode = false;
+        loops[i].in_wave_mode = false;
+        loops[i].phase_offset_rad = 0.0f;
+        apply_loop_pwm(i, 0);
     }
 
-    // Try initialize I2C IMU
     init_imu();
-
     last_cmd_time = millis();
     
-    // Ready blink
+    // Triple Boot Blink
     for (int k = 0; k < 3; k++) {
         digitalWrite(PIN_LED, LOW);
         delay(80);
@@ -93,20 +95,17 @@ void setup() {
         delay(80);
     }
 
-    Serial.println("[BOOT] OpenHaptic ESP32-C3 SuperMini Controller Ready.");
-    if (imu_available) {
-        Serial.println("[BOOT] I2C IMU Gyroscope detected on GPIO 4/5.");
-    }
+    Serial.println("[BOOT] OpenHaptic ESP32-C3 Dual-Circuit Independent Controller Ready.");
+    Serial.println("[BOOT] Loop A (Pads 1-2) -> GPIO0 | Loop B (Pads 3-4) -> GPIO1");
 }
 
 void init_imu() {
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
     Wire.beginTransmission(MPU6050_ADDR);
     if (Wire.endTransmission() == 0) {
-        // Wake up MPU6050
         Wire.beginTransmission(MPU6050_ADDR);
-        Wire.write(0x6B); // PWR_MGMT_1
-        Wire.write(0);    // Wake up
+        Wire.write(0x6B);
+        Wire.write(0);
         Wire.endTransmission(true);
         imu_available = true;
     } else {
@@ -117,7 +116,7 @@ void init_imu() {
 void loop() {
     uint32_t now = millis();
 
-    // 1. Read Serial Commands
+    // 1. Read Serial Command Stream
     while (Serial.available() > 0) {
         String line = Serial.readStringUntil('\n');
         line.trim();
@@ -128,53 +127,51 @@ void loop() {
         }
     }
 
-    // 2. Safety Watchdog Check
+    // 2. Safety Watchdog Verification
     if (!watchdog_triggered && (now - last_cmd_time > WATCHDOG_TIMEOUT_MS)) {
         watchdog_triggered = true;
-        emergency_stop();
-        Serial.println("[WARN] Watchdog timeout: Auto-shutdown all outputs for safety.");
+        emergency_stop_dual();
+        Serial.println("[WARN] Watchdog timeout: Dual circuits safely zeroed.");
     }
 
-    // 3. Update Channel Dynamics (HIT decay & WAVE calculation)
+    // 3. Update Dual Channel Dynamics (100 Hz Loop)
     static uint32_t last_tick = 0;
-    if (now - last_tick >= 10) { // 100 Hz
+    if (now - last_tick >= 10) {
         float dt = (now - last_tick);
         last_tick = now;
 
-        for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-            if (channels[i].in_hit_mode) {
-                channels[i].current_level -= channels[i].decay_rate_per_ms * dt;
-                if (channels[i].current_level <= 0.0f) {
-                    channels[i].current_level = 0.0f;
-                    channels[i].in_hit_mode = false;
+        for (uint8_t i = 0; i < NUM_LOOPS; i++) {
+            if (loops[i].in_hit_mode) {
+                loops[i].current_level -= loops[i].decay_rate_per_ms * dt;
+                if (loops[i].current_level <= 0.0f) {
+                    loops[i].current_level = 0.0f;
+                    loops[i].in_hit_mode = false;
                 }
-                apply_channel_pwm(i, (uint8_t)channels[i].current_level);
-            } else if (channels[i].in_wave_mode) {
-                float elapsed_sec = (now - channels[i].wave_start_time) / 1000.0f;
-                float sin_val = (sinf(2.0f * M_PI * channels[i].wave_freq * elapsed_sec) + 1.0f) / 2.0f;
-                float range = channels[i].wave_max - channels[i].wave_min;
-                channels[i].current_level = channels[i].wave_min + (range * sin_val);
-                apply_channel_pwm(i, (uint8_t)channels[i].current_level);
+                apply_loop_pwm(i, (uint8_t)loops[i].current_level);
+            } else if (loops[i].in_wave_mode) {
+                float elapsed_sec = (now - loops[i].wave_start_time) / 1000.0f;
+                float angle = 2.0f * M_PI * loops[i].wave_freq * elapsed_sec + loops[i].phase_offset_rad;
+                float sin_val = (sinf(angle) + 1.0f) / 2.0f; // 0.0 to 1.0
+                float range = loops[i].wave_max - loops[i].wave_min;
+                loops[i].current_level = loops[i].wave_min + (range * sin_val);
+                apply_loop_pwm(i, (uint8_t)loops[i].current_level);
             }
         }
     }
 
-    // 4. Periodic IMU Telemetry (20 Hz)
+    // 4. Report IMU Telemetry (20 Hz)
     static uint32_t last_imu_time = 0;
     if (imu_available && (now - last_imu_time >= 50)) {
         last_imu_time = now;
         read_and_report_imu();
     }
 
-    // 5. Status LED
+    // 5. LED Status Indication
     if (watchdog_triggered) {
         digitalWrite(PIN_LED, ((now / 200) % 2 == 0) ? LOW : HIGH);
     } else {
-        bool any_active = false;
-        for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-            if (channels[i].current_level > 0) any_active = true;
-        }
-        digitalWrite(PIN_LED, any_active ? LOW : HIGH);
+        bool active = (loops[0].current_level > 0 || loops[1].current_level > 0);
+        digitalWrite(PIN_LED, active ? LOW : HIGH);
     }
 
     delay(2);
@@ -182,12 +179,12 @@ void loop() {
 
 void read_and_report_imu() {
     Wire.beginTransmission(MPU6050_ADDR);
-    Wire.write(0x3B); // ACCEL_XOUT_H
+    Wire.write(0x3B);
     if (Wire.endTransmission(false) == 0 && Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)14, (uint8_t)true) == 14) {
         int16_t ax = Wire.read() << 8 | Wire.read();
         int16_t ay = Wire.read() << 8 | Wire.read();
         int16_t az = Wire.read() << 8 | Wire.read();
-        Wire.read(); Wire.read(); // Skip temp
+        Wire.read(); Wire.read();
         int16_t gx = Wire.read() << 8 | Wire.read();
         int16_t gy = Wire.read() << 8 | Wire.read();
         int16_t gz = Wire.read() << 8 | Wire.read();
@@ -200,20 +197,20 @@ void read_and_report_imu() {
     }
 }
 
-void apply_channel_pwm(uint8_t ch, uint8_t level_percent) {
-    if (ch >= NUM_CHANNELS) return;
+void apply_loop_pwm(uint8_t loop_idx, uint8_t level_percent) {
+    if (loop_idx >= NUM_LOOPS) return;
     if (level_percent > 100) level_percent = 100;
     uint32_t duty = (uint32_t)map(level_percent, 0, 100, 0, 255);
-    ledcWrite(CH_PINS[ch], duty);
+    ledcWrite(LOOP_PINS[loop_idx], duty);
 }
 
-void emergency_stop() {
-    for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-        channels[i].target_level = 0;
-        channels[i].current_level = 0.0f;
-        channels[i].in_hit_mode = false;
-        channels[i].in_wave_mode = false;
-        apply_channel_pwm(i, 0);
+void emergency_stop_dual() {
+    for (uint8_t i = 0; i < NUM_LOOPS; i++) {
+        loops[i].target_level = 0;
+        loops[i].current_level = 0.0f;
+        loops[i].in_hit_mode = false;
+        loops[i].in_wave_mode = false;
+        apply_loop_pwm(i, 0);
     }
 }
 
@@ -229,101 +226,91 @@ void process_command(String cmd) {
     }
 
     if (op == "STOP") {
-        emergency_stop();
-        Serial.println("OK STOPPED");
+        emergency_stop_dual();
+        Serial.println("OK STOPPED_DUAL");
         return;
     }
 
     if (op == "STATUS") {
-        Serial.print("STATUS ");
-        for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-            Serial.printf("CH%d:%.0f%% ", i, channels[i].current_level);
-        }
-        Serial.printf("WD:%s IMU:%s\n", watchdog_triggered ? "TRIGGERED" : "OK", imu_available ? "YES" : "NO");
+        Serial.printf("STATUS LOOP_A(Pads1-2):%.0f%% LOOP_B(Pads3-4):%.0f%% WD:%s\n", 
+                      loops[0].current_level, loops[1].current_level, watchdog_triggered ? "TRIGGERED" : "OK");
         return;
     }
 
-    if (op == "SET") {
+    // DUAL <level_a> <level_b> (Atomic setting of both independent loops)
+    if (op == "DUAL") {
         int second_space = cmd.indexOf(' ', first_space + 1);
-        if (second_space == -1) {
-            uint8_t level = cmd.substring(first_space + 1).toInt();
-            channels[0].in_hit_mode = false;
-            channels[0].in_wave_mode = false;
-            channels[0].current_level = level;
-            apply_channel_pwm(0, level);
-            Serial.printf("OK SET CH0 %d\n", level);
+        if (second_space != -1) {
+            uint8_t lvl_a = cmd.substring(first_space + 1, second_space).toInt();
+            uint8_t lvl_b = cmd.substring(second_space + 1).toInt();
+            for (int i=0; i<2; i++) { loops[i].in_hit_mode = false; loops[i].in_wave_mode = false; }
+            loops[0].current_level = lvl_a; loops[1].current_level = lvl_b;
+            apply_loop_pwm(0, lvl_a); apply_loop_pwm(1, lvl_b);
+            Serial.printf("OK DUAL A=%d B=%d\n", lvl_a, lvl_b);
             return;
         }
-        uint8_t ch = cmd.substring(first_space + 1, second_space).toInt();
-        uint8_t level = cmd.substring(second_space + 1).toInt();
-        if (ch < NUM_CHANNELS) {
-            channels[ch].in_hit_mode = false;
-            channels[ch].in_wave_mode = false;
-            channels[ch].current_level = level;
-            apply_channel_pwm(ch, level);
-            Serial.printf("OK SET CH%d %d\n", ch, level);
-        } else {
-            Serial.println("ERR INVALID_CHANNEL");
-        }
-        return;
     }
 
-    if (op == "HIT") {
-        int p1 = cmd.indexOf(' ', first_space + 1);
-        if (p1 == -1) {
-            uint8_t power = cmd.substring(first_space + 1).toInt();
-            channels[0].in_wave_mode = false;
-            channels[0].in_hit_mode = true;
-            channels[0].current_level = power;
-            channels[0].decay_rate_per_ms = (float)power / 400.0f;
-            apply_channel_pwm(0, power);
-            Serial.printf("OK HIT CH0 %d 400ms\n", power);
-            return;
-        }
-
-        uint8_t ch = cmd.substring(first_space + 1, p1).toInt();
-        int p2 = cmd.indexOf(' ', p1 + 1);
-        uint8_t power = (p2 == -1) ? cmd.substring(p1 + 1).toInt() : cmd.substring(p1 + 1, p2).toInt();
-        uint32_t decay_ms = (p2 == -1) ? 400 : cmd.substring(p2 + 1).toInt();
-        if (decay_ms < 50) decay_ms = 50;
-
-        if (ch < NUM_CHANNELS) {
-            channels[ch].in_wave_mode = false;
-            channels[ch].in_hit_mode = true;
-            channels[ch].current_level = power;
-            channels[ch].decay_rate_per_ms = (float)power / (float)decay_ms;
-            apply_channel_pwm(ch, power);
-            Serial.printf("OK HIT CH%d %d %dms\n", ch, power, decay_ms);
-        } else {
-            Serial.println("ERR INVALID_CHANNEL");
-        }
-        return;
-    }
-
-    if (op == "WAVE") {
+    // FLOW <freq_hz> <phase_deg> <min> <max> (Traveling wave across Loop A & B)
+    // Example: FLOW 1.5 180 15 65 (Loop A and Loop B oscillate 180-deg out of phase)
+    if (op == "FLOW") {
         int p1 = cmd.indexOf(' ', first_space + 1);
         int p2 = cmd.indexOf(' ', p1 + 1);
         int p3 = cmd.indexOf(' ', p2 + 1);
-
         if (p1 != -1 && p2 != -1 && p3 != -1) {
-            uint8_t ch = cmd.substring(first_space + 1, p1).toInt();
-            float freq = cmd.substring(p1 + 1, p2).toFloat();
+            float freq = cmd.substring(first_space + 1, p1).toFloat();
+            float phase_deg = cmd.substring(p1 + 1, p2).toFloat();
             uint8_t min_lvl = cmd.substring(p2 + 1, p3).toInt();
             uint8_t max_lvl = cmd.substring(p3 + 1).toInt();
 
-            if (ch < NUM_CHANNELS) {
-                channels[ch].in_hit_mode = false;
-                channels[ch].in_wave_mode = true;
-                channels[ch].wave_freq = freq;
-                channels[ch].wave_min = min_lvl;
-                channels[ch].wave_max = max_lvl;
-                channels[ch].wave_start_time = millis();
-                Serial.printf("OK WAVE CH%d freq=%.2f min=%d max=%d\n", ch, freq, min_lvl, max_lvl);
+            uint32_t t_now = millis();
+            // Loop A: 0 deg phase
+            loops[0].in_hit_mode = false; loops[0].in_wave_mode = true;
+            loops[0].wave_freq = freq; loops[0].wave_min = min_lvl; loops[0].wave_max = max_lvl;
+            loops[0].phase_offset_rad = 0.0f; loops[0].wave_start_time = t_now;
+
+            // Loop B: shifted by phase_deg
+            loops[1].in_hit_mode = false; loops[1].in_wave_mode = true;
+            loops[1].wave_freq = freq; loops[1].wave_min = min_lvl; loops[1].wave_max = max_lvl;
+            loops[1].phase_offset_rad = (phase_deg * M_PI) / 180.0f; loops[1].wave_start_time = t_now;
+
+            Serial.printf("OK FLOW freq=%.2f phase=%.0f min=%d max=%d\n", freq, phase_deg, min_lvl, max_lvl);
+            return;
+        }
+    }
+
+    // SET <ch 0|1> <level 0-100>
+    if (op == "SET") {
+        int second_space = cmd.indexOf(' ', first_space + 1);
+        if (second_space != -1) {
+            uint8_t ch = cmd.substring(first_space + 1, second_space).toInt();
+            uint8_t level = cmd.substring(second_space + 1).toInt();
+            if (ch < NUM_LOOPS) {
+                loops[ch].in_hit_mode = false; loops[ch].in_wave_mode = false;
+                loops[ch].current_level = level;
+                apply_loop_pwm(ch, level);
+                Serial.printf("OK SET LOOP_%c %d\n", ch == 0 ? 'A' : 'B', level);
                 return;
             }
         }
-        Serial.println("ERR INVALID_WAVE_PARAMS");
-        return;
+    }
+
+    // HIT <ch 0|1> <power 0-100> [decay_ms]
+    if (op == "HIT") {
+        int p1 = cmd.indexOf(' ', first_space + 1);
+        int p2 = cmd.indexOf(' ', p1 + 1);
+        if (p1 != -1) {
+            uint8_t ch = cmd.substring(first_space + 1, p2 == -1 ? cmd.length() : p2).toInt();
+            uint8_t power = (p2 == -1) ? 50 : cmd.substring(p2 + 1).toInt();
+            if (ch < NUM_LOOPS) {
+                loops[ch].in_wave_mode = false; loops[ch].in_hit_mode = true;
+                loops[ch].current_level = power;
+                loops[ch].decay_rate_per_ms = (float)power / 400.0f;
+                apply_loop_pwm(ch, power);
+                Serial.printf("OK HIT LOOP_%c %d\n", ch == 0 ? 'A' : 'B', power);
+                return;
+            }
+        }
     }
 
     Serial.printf("ERR UNKNOWN_CMD %s\n", op.c_str());
