@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief OpenHaptic-Roleplay v3.0 - Rolling Heartbeat Medical-Grade Safety Firmware
+ * @brief OpenHaptic-Roleplay v0.1.0 - Rolling Heartbeat Medical-Grade Safety Firmware
  * 
  * Hardware-level safety requirements:
  * - Requires "SYNC <token> <level_a> <level_b>" every 100ms.
@@ -29,7 +29,7 @@ static bool imu_available = false;
 #define PWM_FREQ        1000
 #define PWM_RESOLUTION  8
 
-// v3.0 Rolling Heartbeat Hard-Safety Variables
+// v0.1.0 Rolling Heartbeat Hard-Safety Variables
 #define HARD_WATCHDOG_MS 150
 static uint32_t last_sync_time = 0;
 static uint8_t expected_token = 0;
@@ -70,7 +70,7 @@ void setup() {
     if (Wire.endTransmission() == 0) imu_available = true;
 
     last_sync_time = millis();
-    Serial.println("[BOOT] v3.0 Rolling-Heartbeat Controller Ready.");
+    Serial.println("[BOOT] v0.1.0 Rolling-Heartbeat Controller Ready.");
 }
 
 void loop() {
@@ -92,7 +92,7 @@ void loop() {
             continue;
         }
 
-        // v3.0 Secure Sync Protocol: SYNC <token> <lvl_A> <lvl_B>
+        // v0.1.0 Secure Sync Protocol: SYNC <token> <lvl_A> <lvl_B>
         if (line.startsWith("SYNC")) {
             if (is_hard_locked) {
                 // Ignore all commands if hardware is locked (requires manual reset)

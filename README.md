@@ -65,8 +65,8 @@ OpenHaptic-Roleplay/
 2. **下载真人级 Kokoro TTS 模型 (约 82MB)**：
    ```powershell
    mkdir -p models\tts\kokoro
-   curl -L -o models\tts\kokoro\kokoro-v0.19.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0.19-int8.onnx
-   curl -L -o models\tts\kokoro\voices.json https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices-v0.19.json
+   curl -L -o models\tts\kokoro\kokoro-v0.1.09.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0.1.09-int8.onnx
+   curl -L -o models\tts\kokoro\voices.json https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices-v0.1.09.json
    ```
 
 3. **双击运行**：

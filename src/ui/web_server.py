@@ -1,5 +1,5 @@
 """
-Headless FastAPI Gateway Server for OpenHaptic-Roleplay (v4.0)
+Headless FastAPI Gateway Server for OpenHaptic-Roleplay (v0.1.0)
 Decoupled Architecture:
 - Exposes CORS-enabled REST & WebSocket APIs for any independent frontend (Vue 3 / React)
 - Mounts production built static files from 'frontend/dist' if available
@@ -45,7 +45,7 @@ def create_app(
     on_command: Optional[Callable[[dict], None]] = None,
     on_mode_switch: Optional[Callable[[str], None]] = None
 ) -> FastAPI:
-    app = FastAPI(title="OpenHaptic Headless API Engine v4.0")
+    app = FastAPI(title="OpenHaptic Headless API Engine v0.1.0")
 
     # Enable full CORS for local Vue/React dev server (e.g. localhost:5173)
     app.add_middleware(

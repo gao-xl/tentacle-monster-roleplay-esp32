@@ -4,7 +4,7 @@
     <header class="app-header">
       <div class="logo">
         <span class="pulse-icon">⚡</span>
-        <span class="title">OPENHAPTIC // V4.0 DECOUPLED HUD</span>
+        <span class="title">OPENHAPTIC // v0.1.0 HUD</span>
       </div>
       <div class="header-status">
         <span class="badge" :class="isConnected ? 'badge-online' : 'badge-offline'">
@@ -114,7 +114,7 @@ const isSettingsOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
 const dialogues = ref<{ time: string; text: string }[]>([
-  { time: 'SYSTEM', text: 'OpenHaptic Frontend v4.0 Vue3 HUD initialized.' }
+  { time: 'SYSTEM', text: 'OpenHaptic Frontend v0.1.0 Vue3 HUD initialized.' }
 ])
 
 let ws: WebSocket | null = null
