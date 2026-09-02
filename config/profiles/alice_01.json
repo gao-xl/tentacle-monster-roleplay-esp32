@@ -1,0 +1,12 @@
+{
+  "user_id": "alice_01",
+  "display_name": "Alice",
+  "user_gender": "FEMALE",
+  "sensitivity_level": "STANDARD",
+  "calibrated_tmax_a": 60.0,
+  "calibrated_tmax_b": 75.0,
+  "face_embedding": null,
+  "play_count": 5,
+  "defeat_count": 2,
+  "last_played": 1710000000.0
+}

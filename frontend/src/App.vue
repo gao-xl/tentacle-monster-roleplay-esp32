@@ -5,6 +5,9 @@
       <div class="logo">
         <span class="pulse-icon">⚡</span>
         <span class="title">OPENHAPTIC // v0.1.0 HUD</span>
+        <span class="user-badge" :class="activeProfile.display_name ? 'user-active' : 'user-anon'">
+          👤 {{ activeProfile.display_name ? `受试者: ${activeProfile.display_name} [${activeProfile.user_gender}]` : '👤 未识别玩家 (Face Scanning...)' }}
+        </span>
       </div>
       <div class="header-status">
         <span class="badge" :class="isConnected ? 'badge-online' : 'badge-offline'">
@@ -117,6 +120,10 @@ const isSettingsOpen = ref(false)
 const isToleranceOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
+const activeProfile = ref<{ display_name?: string; user_gender?: string }>({
+  display_name: 'Alice',
+  user_gender: 'FEMALE'
+})
 const dialogues = ref<{ time: string; text: string }[]>([
   { time: 'SYSTEM', text: 'OpenHaptic Frontend v0.1.0 Vue3 HUD initialized.' }
 ])
@@ -235,6 +242,24 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 .badge-online { border: 1px solid #00ff88; color: #00ff88; }
+.user-badge {
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.user-active {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid #00f0ff;
+  color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+.user-anon {
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px solid #ffcc00;
+  color: #ffcc00;
+}
 .badge-offline { border: 1px solid #ff0055; color: #ff0055; }
 
 .btn-calib {
