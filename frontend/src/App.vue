@@ -22,6 +22,9 @@
           </select>
         </div>
         <button class="btn-studio" @click="isStudioOpen = true">🧩 剧本工坊</button>
+        <button class="btn-ble" :class="{ 'ble-active': isBleConnected }" @click="toggleBleConnect">
+          {{ isBleConnected ? '🔵 蓝牙已直连 (郊狼/玩具)' : '📡 Web-Bluetooth 蓝牙直连' }}
+        </button>
         <button class="btn-calib" @click="isToleranceOpen = true">⚡ 生理耐受校准</button>
         <button class="btn-settings" @click="isSettingsOpen = true">⚙️ 全局设置</button>
         <button class="btn-emergency" @click="sendEmergencyStop">🛑 EMERGENCY STOP (SPACE)</button>
@@ -124,11 +127,28 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import SettingsModal from './components/SettingsModal.vue'
 import ToleranceModal from './components/ToleranceModal.vue'
 import ScenarioStudio from './components/ScenarioStudio.vue'
+import { universalBleDriver } from './drivers/web_ble_driver'
 
 const isConnected = ref(false)
 const isGlitching = ref(false)
 const isSettingsOpen = ref(false)
 const isToleranceOpen = ref(false)
+const isBleConnected = ref(false)
+
+async function toggleBleConnect() {
+  if (isBleConnected.value) {
+    universalBleDriver.disconnect()
+    isBleConnected.value = false
+  } else {
+    const res = await universalBleDriver.connect()
+    if (res.success) {
+      isBleConnected.value = true
+      alert('🎉 成功连接蓝牙设备: ' + res.name)
+    } else {
+      alert('蓝牙连接取消或失败: ' + res.error)
+    }
+  }
+}
 const isStudioOpen = ref(false)
 const videoUrl = ref('/video_feed')
 const telemetry = ref<any>({})
@@ -314,6 +334,28 @@ onUnmounted(() => {
   background: #00ff88;
   color: #000;
   box-shadow: 0 0 15px #00ff88;
+}
+
+.btn-ble {
+  background: rgba(0, 153, 255, 0.15);
+  border: 1px solid #0099ff;
+  color: #0099ff;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-ble:hover {
+  background: #0099ff;
+  color: #000;
+  box-shadow: 0 0 15px #0099ff;
+}
+.ble-active {
+  background: rgba(0, 255, 136, 0.2) !important;
+  border-color: #00ff88 !important;
+  color: #00ff88 !important;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
 }
 
 .btn-calib {
