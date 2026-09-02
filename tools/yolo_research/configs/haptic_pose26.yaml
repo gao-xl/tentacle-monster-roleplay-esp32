@@ -1,0 +1,10 @@
+path: ../data/haptic_pose26
+train: images/train
+val: images/val
+
+# 26 Dense Keypoints Definition (Halpe-26 compatible)
+kpt_shape: [26, 3] # [number of keypoints, number of dim (x, y, visibility)]
+flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 17, 18, 19, 23, 24, 25, 20, 21, 22]
+
+names:
+  0: person
