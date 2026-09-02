@@ -7,15 +7,12 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: #000;
-            color: #00f0ff;
+            background: #000; color: #00f0ff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             width: 100vw; height: 100vh; overflow: hidden;
             display: flex; flex-direction: column; justify-content: space-between; align-items: center;
         }
-        #videoFeed {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1;
-        }
+        #videoFeed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         .hud-header {
             position: absolute; top: 15px; left: 15px; right: 15px; z-index: 2;
             display: flex; justify-content: space-between; align-items: center;
@@ -23,21 +20,14 @@
             border: 1px solid rgba(0, 240, 255, 0.4); backdrop-filter: blur(8px);
             font-size: 13px; font-weight: bold; letter-spacing: 1px;
         }
-        .status-dot {
-            width: 10px; height: 10px; border-radius: 50%; background: #ffcc00; display: inline-block; margin-right: 6px;
-        }
-        .controls {
-            position: absolute; bottom: 30px; z-index: 2; display: flex; gap: 16px;
-        }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ffcc00; display: inline-block; margin-right: 6px; }
+        .controls { position: absolute; bottom: 30px; z-index: 2; display: flex; gap: 16px; }
         .btn {
             background: #00f0ff; color: #000; border: none; padding: 14px 28px; border-radius: 30px;
             font-weight: 900; font-size: 15px; letter-spacing: 1px; cursor: pointer;
             box-shadow: 0 0 25px rgba(0, 240, 255, 0.6); transition: all 0.2s ease;
         }
-        .btn-flip {
-            background: rgba(255, 255, 255, 0.15); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: none;
-        }
+        .btn-flip { background: rgba(255, 255, 255, 0.15); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: none; }
     </style>
 </head>
 <body>
@@ -46,7 +36,7 @@
 
     <div class="hud-header">
         <div><span class="status-dot" id="statusDot"></span><span id="txtStatus">STANDBY</span></div>
-        <div style="color: #888; font-size: 11px;">1080P/60FPS NODE</div>
+        <div style="color: #00ff88; font-size: 11px;">WAKELOCK ACTIVE (60FPS)</div>
     </div>
 
     <div class="controls">
@@ -58,7 +48,27 @@
         let pc = null;
         let localStream = null;
         let isStreaming = false;
-        let facingMode = "environment"; // Default back camera for whole-body pose capture
+        let facingMode = "environment";
+        let wakeLock = null;
+
+        // Screen WakeLock to prevent iOS/Android Background Throttling & Sleep
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log("[WakeLock] Screen Keep-Alive Enabled.");
+                }
+            } catch (err) {
+                console.warn("[WakeLock] Error: ", err);
+            }
+        }
+
+        // Visibility Safety Failsafe: If user switches apps, immediately alert host
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && isStreaming) {
+                console.warn("[Camera Paused] User left phone browser.");
+            }
+        });
 
         async function initCamera() {
             if (localStream) {
@@ -75,6 +85,7 @@
                     audio: false
                 });
                 document.getElementById("videoFeed").srcObject = localStream;
+                await requestWakeLock();
             } catch (err) {
                 console.error("Camera access failed: ", err);
                 alert("无法访问摄像头，请检查权限！");
@@ -89,6 +100,7 @@
                 document.getElementById("btnConnect").style.background = "#00f0ff";
                 document.getElementById("txtStatus").innerText = "DISCONNECTED";
                 document.getElementById("statusDot").style.background = "#ff0055";
+                if (wakeLock) wakeLock.release();
                 return;
             }
 
@@ -96,6 +108,7 @@
             document.getElementById("statusDot").style.background = "#ffcc00";
 
             if (!localStream) await initCamera();
+            await requestWakeLock();
 
             pc = new RTCPeerConnection({
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -136,7 +149,6 @@
             facingMode = (facingMode === "environment") ? "user" : "environment";
             initCamera().then(() => {
                 if (isStreaming) {
-                    // Replace video track seamlessly
                     const videoTrack = localStream.getVideoTracks()[0];
                     const sender = pc.getSenders().find(s => s.track.kind === 'video');
                     if (sender) sender.replaceTrack(videoTrack);
@@ -144,7 +156,6 @@
             });
         }
 
-        // Auto-init on load
         window.addEventListener('load', initCamera);
     </script>
 </body>
